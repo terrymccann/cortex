@@ -1,0 +1,10 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./packages/contracts" },
+    { "path": "./packages/domain" },
+    { "path": "./packages/cortex" },
+    { "path": "./packages/openai" },
+    { "path": "./packages/sdk" }
+  ]
+}
