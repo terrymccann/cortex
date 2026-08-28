@@ -8,56 +8,8 @@ import {
   type SimTime,
   type WorldConstraint
 } from "@cortex/contracts";
-import type { PatchEnvelope } from "./patches.js";
 import type { CommittedDecision } from "./state.js";
-import type { AgentStateStore, PatchApplyResult } from "./state-store.js";
-
-export interface CommunicationOutput {
-  readonly decisionId: string;
-  readonly speechAct: string;
-  readonly utterance: string;
-}
-
-export interface CommunicationRenderer {
-  render(decision: CommittedDecision, intention: FeasibleIntention): CommunicationOutput;
-}
-
-export class CommunicationModule {
-  constructor(
-    private readonly stateStore: AgentStateStore,
-    private readonly renderer: CommunicationRenderer
-  ) {}
-
-  async communicate(
-    decision: CommittedDecision,
-    intention: FeasibleIntention,
-    now: SimTime
-  ): Promise<{ output: CommunicationOutput; applyResult: PatchApplyResult }> {
-    const state = await this.stateStore.snapshot(decision.agentId);
-    const output = this.renderer.render(decision, intention);
-    if (state.currentDecision?.id !== decision.id) {
-      return {
-        output,
-        applyResult: { status: "rejected", reason: "decision-not-current" }
-      };
-    }
-    const patch: PatchEnvelope = {
-      patchId: `communication:${decision.id}`,
-      agentId: state.id,
-      module: "communication",
-      basedOnVersion: state.version,
-      worldVersion: 0,
-      observedThroughSequence: 0,
-      triggeredBy: [],
-      idempotencyKey: `communication:${decision.id}`,
-      rebasePolicy: "never",
-      createdAt: now,
-      patch: { kind: "communication", ...output }
-    };
-    return { output, applyResult: await this.stateStore.apply(patch) };
-  }
-
-}
+import type { AgentStateStore } from "./state-store.js";
 
 export interface SkillDefinition {
   readonly intentionKind: string;

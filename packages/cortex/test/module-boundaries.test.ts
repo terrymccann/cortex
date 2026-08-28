@@ -7,20 +7,34 @@ import {
   type FeasibleIntention
 } from "@cortex/contracts";
 import { describe, expect, it } from "vitest";
-import { CommunicationModule, SkillExecutor, type SkillDefinition } from "../src/execution.js";
+import { SkillExecutor, type SkillDefinition } from "../src/execution.js";
 import { FakeWorld } from "../src/fake-world.js";
 import { CortexKernel } from "../src/kernel.js";
-import { MemoryModule } from "../src/modules.js";
 import type { CommittedDecision } from "../src/state.js";
 import { InMemoryAgentStateStore } from "../src/state-store.js";
+import {
+  CommunicationModule,
+  conversationPack,
+  memoryPack,
+  MemoryModule,
+  sliceValue,
+  STANDARD_SLICE_IDS,
+  type ConversationState,
+  type MemoryState
+} from "../../standard-packs/src/index.js";
 
 const elena = asAgentId("elena");
 
 describe("cognitive module boundaries", () => {
   it("rejects a memory whose source event the agent never perceived", async () => {
-    const store = new InMemoryAgentStateStore();
+    const store = new InMemoryAgentStateStore(memoryPack.stateSlices);
     const kernel = new CortexKernel(store);
-    await kernel.registerAgent({ id: elena, identity: { name: "Elena" } }, asSimTime(0));
+    await kernel.registerAgent(
+      { id: elena, identity: { name: "Elena" }, slices: {
+        [STANDARD_SLICE_IDS.memory]: { schemaVersion: 1, value: { memories: [] } }
+      } },
+      asSimTime(0)
+    );
 
     const result = await new MemoryModule(store).remember({
       agentId: elena,
@@ -33,13 +47,20 @@ describe("cognitive module boundaries", () => {
     });
 
     expect(result).toEqual({ status: "rejected", reason: "unobserved-source-event" });
-    expect((await store.snapshot(elena)).memories).toEqual([]);
+    expect(
+      sliceValue<MemoryState>(await store.snapshot(elena), STANDARD_SLICE_IDS.memory).memories
+    ).toEqual([]);
   });
 
   it("rejects speech generated from a decision that is not current", async () => {
-    const store = new InMemoryAgentStateStore();
+    const store = new InMemoryAgentStateStore(conversationPack.stateSlices);
     const kernel = new CortexKernel(store);
-    await kernel.registerAgent({ id: elena, identity: { name: "Elena" } }, asSimTime(0));
+    await kernel.registerAgent(
+      { id: elena, identity: { name: "Elena" }, slices: {
+        [STANDARD_SLICE_IDS.conversation]: { schemaVersion: 1, value: {} }
+      } },
+      asSimTime(0)
+    );
     const decision: CommittedDecision = {
       id: asDecisionId("old-decision"),
       agentId: elena,
@@ -66,7 +87,12 @@ describe("cognitive module boundaries", () => {
       })
     }).communicate(decision, intention, asSimTime(2));
     expect(result.applyResult).toEqual({ status: "rejected", reason: "decision-not-current" });
-    expect((await store.snapshot(elena)).lastCommunication).toBeUndefined();
+    expect(
+      sliceValue<ConversationState>(
+        await store.snapshot(elena),
+        STANDARD_SLICE_IDS.conversation
+      ).lastCommunication
+    ).toBeUndefined();
   });
 
   it("does not submit a world action from a decision that is not current", async () => {

@@ -34,6 +34,9 @@ The prerequisite contract-generalization work is specified in
 
 Slice C composition and compatibility notes are in
 [docs/phase-3.0-slice-c-composition.md](docs/phase-3.0-slice-c-composition.md).
+
+Slice D standard-pack extraction notes are in
+[docs/phase-3.0-slice-d-standard-packs.md](docs/phase-3.0-slice-d-standard-packs.md).
 The bounded goal formation and capability-planning layer that follows is
 specified in
 [docs/phase-3.1-bounded-emergent-autonomy.md](docs/phase-3.1-bounded-emergent-autonomy.md).
@@ -65,7 +68,9 @@ The workspace now also contains:
 - `@cortex/domain`, for versioned actions, entity types, perceptions,
   motivations, resources, relationship dimensions, and semantic metadata;
 - `@cortex/sdk`, for pack compatibility, state-slice ownership, module and frame
-  registration, and domain-specific fallback policies.
+  registration, and domain-specific fallback policies;
+- `@cortex/standard-packs`, for optional traits, beliefs, memory, social,
+  goals, planning, and conversation state using only public pack contracts; and
 - `@cortex/openai`, an optional provider adapter that calls the OpenAI Responses
   API with strict structured output, cancellation, retry classification, usage
   metadata, and audit hooks while keeping API details out of `@cortex/runtime`.

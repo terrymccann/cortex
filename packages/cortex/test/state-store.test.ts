@@ -12,6 +12,12 @@ import {
   InMemoryAgentStateStore,
   type StateSliceReducer
 } from "../src/state-store.js";
+import {
+  sliceValue,
+  socialPack,
+  STANDARD_SLICE_IDS,
+  type SocialState
+} from "../../standard-packs/src/index.js";
 
 const elena = asAgentId("elena");
 const marcus = asAgentId("marcus");
@@ -36,7 +42,7 @@ describe("InMemoryAgentStateStore", () => {
       idempotencyKey: "bad-owner",
       rebasePolicy: "never",
       createdAt: asSimTime(1),
-      patch: { kind: "goal", goals: [] }
+      patch: { kind: "action-awareness", expectations: [] }
     });
 
     expect(result).toEqual({ status: "rejected", reason: "module-ownership" });
@@ -93,7 +99,19 @@ describe("InMemoryAgentStateStore", () => {
   });
 
   it("applies an event delta exactly once on a newer state", async () => {
-    const store = await createStore();
+    const store = new InMemoryAgentStateStore(socialPack.stateSlices);
+    await store.register(
+      createAgentState(
+        {
+          id: elena,
+          identity: { name: "Elena" },
+          slices: {
+            [STANDARD_SLICE_IDS.social]: { schemaVersion: 1, value: { relationships: [] } }
+          }
+        },
+        asSimTime(0)
+      )
+    );
     await store.apply({
       patchId: "advance",
       agentId: elena,
@@ -114,7 +132,7 @@ describe("InMemoryAgentStateStore", () => {
     const socialPatch: PatchEnvelope = {
       patchId: "social-event-1",
       agentId: elena,
-      module: "social-awareness",
+      module: "cortex-social:awareness",
       basedOnVersion: 0,
       worldVersion: 1,
       observedThroughSequence: 1,
@@ -123,8 +141,9 @@ describe("InMemoryAgentStateStore", () => {
       rebasePolicy: "event-delta",
       createdAt: asSimTime(2),
       patch: {
-        kind: "social",
-        relationshipDeltas: [{ target: marcus, trust: -12, resentment: 8 }]
+        kind: "state-slice",
+        sliceId: STANDARD_SLICE_IDS.social,
+        operation: { deltas: [{ target: marcus, trust: -12, resentment: 8 }] }
       }
     };
 
@@ -139,7 +158,9 @@ describe("InMemoryAgentStateStore", () => {
         })
       ).status
     ).toBe("duplicate");
-    expect((await store.snapshot(elena)).relationships).toContainEqual({
+    expect(
+      sliceValue<SocialState>(await store.snapshot(elena), STANDARD_SLICE_IDS.social).relationships
+    ).toContainEqual({
       target: marcus,
       trust: -12,
       affection: 0,

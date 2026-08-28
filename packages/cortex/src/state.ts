@@ -4,8 +4,6 @@ import type {
   EntityRef,
   EventId,
   ExpectedEffect,
-  GoalId,
-  MemoryId,
   ObservedFact,
   SimTime
 } from "@cortex/contracts";
@@ -36,45 +34,6 @@ export interface PerceivedObservation {
   readonly facts: readonly ObservedFact[];
 }
 
-export interface Belief {
-  readonly id: string;
-  readonly subject: EntityRef;
-  readonly predicate: string;
-  readonly object: unknown;
-  readonly confidence: number;
-  readonly acquiredAt: SimTime;
-  readonly sources: readonly EventId[];
-}
-
-export interface Relationship {
-  readonly target: AgentId;
-  readonly trust: number;
-  readonly affection: number;
-  readonly respect: number;
-  readonly fear: number;
-  readonly attraction: number;
-  readonly resentment: number;
-  readonly familiarity: number;
-}
-
-export interface EpisodicMemory {
-  readonly id: MemoryId;
-  readonly sourceEvents: readonly EventId[];
-  readonly summary: string;
-  readonly occurredAt: SimTime;
-  readonly importance: number;
-  readonly emotionalValence: number;
-  readonly confidence: number;
-}
-
-export interface Goal {
-  readonly id: GoalId;
-  readonly kind: string;
-  readonly description: string;
-  readonly priority: number;
-  readonly status: "active" | "suspended" | "satisfied" | "abandoned";
-}
-
 export interface CommittedDecision {
   readonly id: DecisionId;
   readonly agentId: AgentId;
@@ -93,17 +52,6 @@ export interface DecisionObligation {
   readonly requiredIntentionIds: readonly string[];
   readonly remainingDecisionCycles: number;
   readonly reason: string;
-}
-
-export interface PlanState {
-  readonly id: string;
-  readonly status: "created" | "invalidated";
-}
-
-export interface CommunicationRecord {
-  readonly decisionId: string;
-  readonly speechAct: string;
-  readonly utterance?: string;
 }
 
 export interface ActionExpectation {
@@ -131,36 +79,12 @@ export interface AgentRuntimeEnvelope {
   readonly slices: Readonly<Record<string, StateSliceState>>;
 }
 
-/**
- * Transitional Phase 3.0 state shape. The runtime envelope is stable; optional
- * fixed fields remain only until their implementations move into packs in Slice D.
- */
-export interface AgentState extends AgentRuntimeEnvelope {
-  /** @deprecated Owned by the cortex:traits pack. */
-  readonly personality: Readonly<Record<string, number>>;
-  /** @deprecated Owned by the cortex:beliefs pack. */
-  readonly beliefs: readonly Belief[];
-  /** @deprecated Owned by the cortex:social pack. */
-  readonly relationships: readonly Relationship[];
-  /** @deprecated Owned by the cortex:memory pack. */
-  readonly memories: readonly EpisodicMemory[];
-  /** @deprecated Owned by the cortex:goals pack. */
-  readonly goals: readonly Goal[];
-  /** @deprecated Owned by the cortex:planning pack. */
-  readonly activePlan: PlanState | undefined;
-  /** @deprecated Owned by the cortex:conversation pack. */
-  readonly lastCommunication: CommunicationRecord | undefined;
-}
+export type AgentState = AgentRuntimeEnvelope;
 
 export interface AgentSeed {
   readonly id: AgentId;
   readonly identity: Identity;
-  readonly personality?: Readonly<Record<string, number>>;
   readonly resolution?: Partial<CognitiveResolution>;
-  readonly relationships?: readonly Relationship[];
-  readonly beliefs?: readonly Belief[];
-  readonly memories?: readonly EpisodicMemory[];
-  readonly goals?: readonly Goal[];
   readonly activeObligations?: readonly DecisionObligation[];
   readonly slices?: Readonly<Record<string, StateSliceState>>;
 }
@@ -171,7 +95,6 @@ export function createAgentState(seed: AgentSeed, now: SimTime): AgentState {
     version: 0,
     updatedAt: now,
     identity: seed.identity,
-    personality: seed.personality ?? {},
     resolution: {
       tier: seed.resolution?.tier ?? 0,
       reasons: seed.resolution?.reasons ?? [],
@@ -184,13 +107,7 @@ export function createAgentState(seed: AgentSeed, now: SimTime): AgentState {
       }
     },
     perception: [],
-    beliefs: seed.beliefs ?? [],
-    relationships: seed.relationships ?? [],
-    memories: seed.memories ?? [],
-    goals: seed.goals ?? [],
-    activePlan: undefined,
     activeObligations: seed.activeObligations ?? [],
-    lastCommunication: undefined,
     expectations: [],
     slices: seed.slices ?? {}
   };

@@ -54,6 +54,6 @@ not rewrite or reinterpret that fixture as v2.
 
 ## Slice D boundary
 
-Slice C establishes public composition and enforcement contracts. Slice D owns
-the extraction of traits, beliefs, memory, social state, goals, planning, and
-conversation from the deprecated transitional `AgentState` fields into packs.
+Slice C established public composition and enforcement contracts. Slice D
+subsequently removed the deprecated fields and extracted traits, beliefs,
+memory, social state, goals, planning, and conversation into standard packs.

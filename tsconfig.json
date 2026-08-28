@@ -5,6 +5,7 @@
     { "path": "./packages/domain" },
     { "path": "./packages/cortex" },
     { "path": "./packages/openai" },
-    { "path": "./packages/sdk" }
+    { "path": "./packages/sdk" },
+    { "path": "./packages/standard-packs" }
   ]
 }

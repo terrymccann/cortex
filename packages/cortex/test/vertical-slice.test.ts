@@ -8,16 +8,29 @@ import {
 } from "@cortex/contracts";
 import { describe, expect, it } from "vitest";
 import { BoundedController, FrameBuilder, ScriptedControllerReasoner } from "../src/decision.js";
-import { CommunicationModule, SkillExecutor, type SkillDefinition } from "../src/execution.js";
+import { SkillExecutor, type SkillDefinition } from "../src/execution.js";
 import { FakeWorld } from "../src/fake-world.js";
 import { CortexKernel } from "../src/kernel.js";
 import {
   ActionAwarenessModule,
-  MemoryModule,
-  SocialAwarenessModule,
   type EffectMatcher
 } from "../src/modules.js";
 import { InMemoryAgentStateStore } from "../src/state-store.js";
+import { PackRegistry } from "../../sdk/src/index.js";
+import {
+  CommunicationModule,
+  conversationPack,
+  goalsPack,
+  memoryPack,
+  MemoryModule,
+  sliceState,
+  sliceValue,
+  socialPack,
+  SocialAwarenessModule,
+  STANDARD_SLICE_IDS,
+  type ConversationState,
+  type SocialState
+} from "../../standard-packs/src/index.js";
 
 const elena = asAgentId("elena");
 const marcus = asAgentId("marcus");
@@ -62,7 +75,9 @@ const responseSkill: SkillDefinition = {
 
 describe("Marcus/Elena grounded vertical slice", () => {
   it("keeps perception, cognition, speech, action, and observed success coherent", async () => {
-    const store = new InMemoryAgentStateStore();
+    const packs = new PackRegistry();
+    for (const pack of [memoryPack, socialPack, goalsPack, conversationPack]) packs.register(pack);
+    const store = new InMemoryAgentStateStore(packs.stateSliceReducers());
     const world = new FakeWorld();
     const kernel = new CortexKernel(store);
     const memory = new MemoryModule(store);
@@ -84,27 +99,34 @@ describe("Marcus/Elena grounded vertical slice", () => {
             concurrentJobsRemaining: 1
           }
         },
-        goals: [
-          {
-            id: asGoalId("protect-council"),
-            kind: "protect",
-            description: "Protect the council from political violence",
-            priority: 0.95,
-            status: "active"
-          }
-        ],
-        relationships: [
-          {
-            target: marcus,
-            trust: 18,
-            affection: -10,
-            respect: 61,
-            fear: 20,
-            attraction: 0,
-            resentment: 42,
-            familiarity: 75
-          }
-        ]
+        slices: {
+          ...packs.initialSlices(),
+          [STANDARD_SLICE_IDS.goals]: sliceState({
+            goals: [
+              {
+                id: asGoalId("protect-council"),
+                kind: "protect",
+                description: "Protect the council from political violence",
+                priority: 0.95,
+                status: "active"
+              }
+            ]
+          }),
+          [STANDARD_SLICE_IDS.social]: sliceState({
+            relationships: [
+              {
+                target: marcus,
+                trust: 18,
+                affection: -10,
+                respect: 61,
+                fear: 20,
+                attraction: 0,
+                resentment: 42,
+                familiarity: 75
+              }
+            ]
+          })
+        }
       },
       asSimTime(0)
     );
@@ -249,21 +271,7 @@ describe("Marcus/Elena grounded vertical slice", () => {
           reasonCode: "protect-council"
         };
       }),
-      new FrameBuilder([
-        {
-          id: "cortex-memory:relevant",
-          ownerPackId: "cortex:memory",
-          schemaVersion: 1,
-          maxBytes: 4096,
-          maxItems: 8,
-          readsSlices: [],
-          validate: (value) => Array.isArray(value),
-          contribute: (state) =>
-            [...state.memories]
-              .sort((left, right) => right.importance - left.importance)
-              .slice(0, 8)
-        }
-      ])
+      new FrameBuilder(packs.frameContributors(), packs.frameManifestFingerprint())
     );
     const result = await controller.decide({
       agentId: elena,
@@ -343,11 +351,14 @@ describe("Marcus/Elena grounded vertical slice", () => {
 
     const finalState = await store.snapshot(elena);
     expect(finalState.currentDecision?.intentionId).toBe("pretend-to-accept");
-    expect(finalState.lastCommunication?.decisionId).toBe(finalState.currentDecision?.id);
+    expect(
+      sliceValue<ConversationState>(finalState, STANDARD_SLICE_IDS.conversation)
+        .lastCommunication?.decisionId
+    ).toBe(finalState.currentDecision?.id);
     expect(finalState.expectations).toContainEqual(
       expect.objectContaining({ actionId: execution.command.id, status: "succeeded" })
     );
-    expect(finalState.relationships[0]).toEqual(
+    expect(sliceValue<SocialState>(finalState, STANDARD_SLICE_IDS.social).relationships[0]).toEqual(
       expect.objectContaining({ target: marcus, trust: 6, fear: 25, resentment: 50 })
     );
   });

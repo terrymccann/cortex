@@ -46,6 +46,18 @@ importers:
         specifier: workspace:*
         version: link:../cortex
 
+  packages/standard-packs:
+    dependencies:
+      '@cortex/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@cortex/runtime':
+        specifier: workspace:*
+        version: link:../cortex
+      '@cortex/sdk':
+        specifier: workspace:*
+        version: link:../sdk
+
 packages:
 
   '@esbuild/aix-ppc64@0.28.2':

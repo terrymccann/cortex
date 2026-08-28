@@ -1,6 +1,6 @@
 import type { AgentId, NamespacedId, SimTime } from "@cortex/contracts";
 import { ownedPatchKinds, type PatchEnvelope } from "./patches.js";
-import type { AgentState, Relationship } from "./state.js";
+import type { AgentState } from "./state.js";
 
 export type PatchRejectionReason =
   | "agent-not-found"
@@ -33,41 +33,6 @@ export interface StateSliceReducer {
   reduce(current: unknown, operation: unknown): unknown;
 }
 
-const clampRelationship = (value: number): number => Math.max(-100, Math.min(100, value));
-
-const updateRelationships = (
-  current: readonly Relationship[],
-  deltas: Extract<PatchEnvelope["patch"], { kind: "social" }>["relationshipDeltas"]
-): readonly Relationship[] => {
-  const byTarget = new Map(current.map((relationship) => [relationship.target, relationship]));
-
-  for (const delta of deltas) {
-    const existing = byTarget.get(delta.target) ?? {
-      target: delta.target,
-      trust: 0,
-      affection: 0,
-      respect: 0,
-      fear: 0,
-      attraction: 0,
-      resentment: 0,
-      familiarity: 0
-    };
-
-    byTarget.set(delta.target, {
-      target: delta.target,
-      trust: clampRelationship(existing.trust + (delta.trust ?? 0)),
-      affection: clampRelationship(existing.affection + (delta.affection ?? 0)),
-      respect: clampRelationship(existing.respect + (delta.respect ?? 0)),
-      fear: clampRelationship(existing.fear + (delta.fear ?? 0)),
-      attraction: clampRelationship(existing.attraction + (delta.attraction ?? 0)),
-      resentment: clampRelationship(existing.resentment + (delta.resentment ?? 0)),
-      familiarity: Math.max(0, Math.min(100, existing.familiarity + (delta.familiarity ?? 0)))
-    });
-  }
-
-  return [...byTarget.values()];
-};
-
 function reducePatch(state: AgentState, envelope: PatchEnvelope): AgentState {
   const patch = envelope.patch;
   const base = {
@@ -81,33 +46,11 @@ function reducePatch(state: AgentState, envelope: PatchEnvelope): AgentState {
       return { ...base, perception: [...state.perception, ...patch.observations] };
     case "action-awareness":
       return { ...base, expectations: patch.expectations };
-    case "memory":
-      return { ...base, memories: [...state.memories, ...patch.memories] };
-    case "social":
-      return {
-        ...base,
-        relationships: updateRelationships(state.relationships, patch.relationshipDeltas)
-      };
-    case "goal": {
-      const updated = new Map(state.goals.map((goal) => [goal.id, goal]));
-      for (const goal of patch.goals) updated.set(goal.id, goal);
-      return { ...base, goals: [...updated.values()] };
-    }
     case "decision":
       return {
         ...base,
         currentDecision: patch.decision,
         activeObligations: patch.activeObligations ?? state.activeObligations
-      };
-    case "plan":
-      return {
-        ...base,
-        activePlan: patch.status === "created" ? { id: patch.planId, status: patch.status } : undefined
-      };
-    case "communication":
-      return {
-        ...base,
-        lastCommunication: patch
       };
     case "state-slice":
       throw new Error("State-slice patches are reduced by their registered reducer");

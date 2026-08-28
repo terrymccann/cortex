@@ -1,5 +1,4 @@
 import {
-  asMemoryId,
   type AgentId,
   type ExpectedEffect,
   type EventId,
@@ -8,89 +7,8 @@ import {
   type SimTime
 } from "@cortex/contracts";
 import type { PatchEnvelope } from "./patches.js";
-import type { ActionExpectation, EpisodicMemory } from "./state.js";
+import type { ActionExpectation } from "./state.js";
 import type { AgentStateStore, PatchApplyResult } from "./state-store.js";
-
-export class MemoryModule {
-  constructor(private readonly stateStore: AgentStateStore) {}
-
-  async remember(input: {
-    agentId: AgentId;
-    sourceEvents: readonly EventId[];
-    summary: string;
-    occurredAt: SimTime;
-    importance: number;
-    emotionalValence: number;
-    confidence: number;
-  }): Promise<PatchApplyResult> {
-    const state = await this.stateStore.snapshot(input.agentId);
-    const memory: EpisodicMemory = {
-      id: asMemoryId(`memory:${input.agentId}:${input.sourceEvents.join("+")}`),
-      sourceEvents: input.sourceEvents,
-      summary: input.summary,
-      occurredAt: input.occurredAt,
-      importance: clamp01(input.importance),
-      emotionalValence: Math.max(-1, Math.min(1, input.emotionalValence)),
-      confidence: clamp01(input.confidence)
-    };
-    return this.stateStore.apply({
-      patchId: `${memory.id}:ingest`,
-      agentId: input.agentId,
-      module: "memory",
-      basedOnVersion: state.version,
-      worldVersion: 0,
-      observedThroughSequence: 0,
-      triggeredBy: input.sourceEvents,
-      idempotencyKey: `${memory.id}:ingest`,
-      rebasePolicy: "event-delta",
-      createdAt: input.occurredAt,
-      patch: { kind: "memory", memories: [memory] }
-    });
-  }
-}
-
-export class SocialAwarenessModule {
-  constructor(private readonly stateStore: AgentStateStore) {}
-
-  async applyInference(input: {
-    agentId: AgentId;
-    eventId: EventId;
-    now: SimTime;
-    target: AgentId;
-    trustDelta?: number;
-    respectDelta?: number;
-    fearDelta?: number;
-    resentmentDelta?: number;
-    familiarityDelta?: number;
-  }): Promise<PatchApplyResult> {
-    const state = await this.stateStore.snapshot(input.agentId);
-    return this.stateStore.apply({
-      patchId: `social:${input.agentId}:${input.eventId}`,
-      agentId: input.agentId,
-      module: "social-awareness",
-      basedOnVersion: state.version,
-      worldVersion: 0,
-      observedThroughSequence: 0,
-      triggeredBy: [input.eventId],
-      idempotencyKey: `social:${input.agentId}:${input.eventId}`,
-      rebasePolicy: "event-delta",
-      createdAt: input.now,
-      patch: {
-        kind: "social",
-        relationshipDeltas: [
-          {
-            target: input.target,
-            ...(input.trustDelta === undefined ? {} : { trust: input.trustDelta }),
-            ...(input.respectDelta === undefined ? {} : { respect: input.respectDelta }),
-            ...(input.fearDelta === undefined ? {} : { fear: input.fearDelta }),
-            ...(input.resentmentDelta === undefined ? {} : { resentment: input.resentmentDelta }),
-            ...(input.familiarityDelta === undefined ? {} : { familiarity: input.familiarityDelta })
-          }
-        ]
-      }
-    });
-  }
-}
 
 export class ActionAwarenessModule {
   readonly #effectMatchers = new Map<string, EffectMatcher>();
@@ -188,5 +106,3 @@ export interface EffectMatcher {
   readonly definitionVersion: number;
   matches(effect: ExpectedEffect, observation: PerceptibleWorldEvent): boolean;
 }
-
-const clamp01 = (value: number): number => Math.max(0, Math.min(1, value));

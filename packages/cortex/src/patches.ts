@@ -3,8 +3,6 @@ import type {
   ActionExpectation,
   CommittedDecision,
   DecisionObligation,
-  EpisodicMemory,
-  Goal,
   PerceivedObservation
 } from "./state.js";
 
@@ -20,47 +18,10 @@ export interface ActionAwarenessPatch {
   readonly expectations: readonly ActionExpectation[];
 }
 
-export interface MemoryPatch {
-  readonly kind: "memory";
-  readonly memories: readonly EpisodicMemory[];
-}
-
-export interface SocialPatch {
-  readonly kind: "social";
-  readonly relationshipDeltas: readonly {
-    readonly target: AgentId;
-    readonly trust?: number;
-    readonly affection?: number;
-    readonly respect?: number;
-    readonly fear?: number;
-    readonly attraction?: number;
-    readonly resentment?: number;
-    readonly familiarity?: number;
-  }[];
-}
-
-export interface GoalPatch {
-  readonly kind: "goal";
-  readonly goals: readonly Goal[];
-}
-
-export interface PlanPatch {
-  readonly kind: "plan";
-  readonly planId: string;
-  readonly status: "created" | "invalidated";
-}
-
 export interface DecisionPatch {
   readonly kind: "decision";
   readonly decision: CommittedDecision;
   readonly activeObligations?: readonly DecisionObligation[];
-}
-
-export interface CommunicationPatch {
-  readonly kind: "communication";
-  readonly decisionId: string;
-  readonly speechAct: string;
-  readonly utterance?: string;
 }
 
 export interface StateSlicePatch {
@@ -72,12 +33,7 @@ export interface StateSlicePatch {
 export type DomainPatch =
   | PerceptionPatch
   | ActionAwarenessPatch
-  | MemoryPatch
-  | SocialPatch
-  | GoalPatch
-  | PlanPatch
   | DecisionPatch
-  | CommunicationPatch
   | StateSlicePatch;
 
 export type RebasePolicy = "never" | "event-delta" | "commutative";
@@ -99,10 +55,5 @@ export interface PatchEnvelope<TPatch extends DomainPatch = DomainPatch> {
 export const ownedPatchKinds: Readonly<Record<string, readonly DomainPatch["kind"][]>> = {
   perception: ["perception"],
   "action-awareness": ["action-awareness"],
-  memory: ["memory"],
-  "social-awareness": ["social"],
-  "goal-manager": ["goal"],
-  planner: ["plan"],
-  controller: ["decision"],
-  communication: ["communication"]
+  controller: ["decision"]
 };
