@@ -7,7 +7,14 @@ import {
   type PerceptibleWorldEvent
 } from "@cortex/contracts";
 import { describe, expect, it } from "vitest";
-import { BoundedController, FrameBuilder, ScriptedControllerReasoner } from "../src/decision.js";
+import {
+  BoundedController,
+  FrameBuilder,
+  MemoryAcceptedDecisionRecorder,
+  ReplayControllerReasoner,
+  ScriptedControllerReasoner,
+  type CognitiveFrame
+} from "../src/decision.js";
 import { SkillExecutor, type SkillDefinition } from "../src/execution.js";
 import { FakeWorld } from "../src/fake-world.js";
 import { CortexKernel } from "../src/kernel.js";
@@ -83,6 +90,8 @@ describe("Marcus/Elena grounded vertical slice", () => {
     const memory = new MemoryModule(store);
     const social = new SocialAwarenessModule(store);
     const awareness = new ActionAwarenessModule(store, [affirmativeResponseMatcher]);
+    const recorder = new MemoryAcceptedDecisionRecorder();
+    let recordedFrame: CognitiveFrame | undefined;
 
     await kernel.registerAgent(
       {
@@ -251,6 +260,7 @@ describe("Marcus/Elena grounded vertical slice", () => {
       store,
       world,
       new ScriptedControllerReasoner((frame) => {
+        recordedFrame = frame;
         expect(frame.feasibleIntentions.map((candidate) => candidate.id)).toEqual([
           "accept",
           "reject",
@@ -271,13 +281,27 @@ describe("Marcus/Elena grounded vertical slice", () => {
           reasonCode: "protect-council"
         };
       }),
-      new FrameBuilder(packs.frameContributors(), packs.frameManifestFingerprint())
+      new FrameBuilder(
+        packs.frameContributors(),
+        packs.frameManifestFingerprint([
+          { kind: "constraint-matcher", id: "social:target-alive", version: "1" },
+          { kind: "effect-matcher", id: "social:affirmative-response-observed", version: "1" }
+        ]),
+        packs.compatibilityComponents([
+          { kind: "constraint-matcher", id: "social:target-alive", version: "1" },
+          { kind: "effect-matcher", id: "social:affirmative-response-observed", version: "1" }
+        ])
+      ),
+      undefined,
+      { decisionRecorder: recorder }
     );
     const result = await controller.decide({
       agentId: elena,
       situationId: "invitation",
       situation: "Marcus privately asks Elena to join a conspiracy against the mayor.",
-      socialSignals: ["covert-recruitment", "political-pressure"],
+      sectionInputs: {
+        "cortex-social:signals": ["covert-recruitment", "political-pressure"]
+      },
       now: asSimTime(11)
     });
     expect(result.status).toBe("committed");
@@ -361,6 +385,12 @@ describe("Marcus/Elena grounded vertical slice", () => {
     expect(sliceValue<SocialState>(finalState, STANDARD_SLICE_IDS.social).relationships[0]).toEqual(
       expect.objectContaining({ target: marcus, trust: 6, fear: 25, resentment: 50 })
     );
+    if (recordedFrame === undefined) throw new Error("Expected the social decision frame");
+    const replay = new ReplayControllerReasoner(recorder.records());
+    await expect(replay.decide(recordedFrame, new AbortController().signal)).resolves.toEqual(
+      recorder.records()[0]?.output
+    );
+    expect(replay.consumedCount()).toBe(1);
   });
 
   it("marks an unobserved intended effect as failed after its deadline", async () => {

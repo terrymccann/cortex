@@ -9,8 +9,11 @@ import {
 import type {
   CognitiveFrameContributor,
   FallbackPolicy,
+  RuntimeCompatibilityComponent,
   StateSliceReducer
 } from "@cortex/runtime";
+
+export type { RuntimeCompatibilityComponent } from "@cortex/runtime";
 
 export const CORTEX_SDK_VERSION = "0.1.0";
 export const CORTEX_PACK_MANIFEST_SCHEMA_V1 = "cortex-pack-manifest-v1" as const;
@@ -216,6 +219,40 @@ export class PackRegistry {
     for (const contributor of pack.frameContributors) this.#frameOwners.set(contributor.id, pack.id);
   }
 
+  registerAll(packs: readonly CortexPack[]): void {
+    const pending = new Map<NamespacedId, CortexPack>();
+    for (const pack of packs) {
+      if (pending.has(pack.id) || this.#packs.has(pack.id)) {
+        throw new PackValidationError(`Pack already registered: ${pack.id}`);
+      }
+      pending.set(pack.id, pack);
+    }
+
+    const visiting = new Set<NamespacedId>();
+    const visited = new Set<NamespacedId>();
+    const ordered: CortexPack[] = [];
+    const visit = (pack: CortexPack): void => {
+      if (visited.has(pack.id)) return;
+      if (visiting.has(pack.id)) {
+        throw new PackValidationError(`Pack dependency cycle detected at ${pack.id}`);
+      }
+      visiting.add(pack.id);
+      for (const dependency of pack.dependencies) {
+        if (this.#packs.has(dependency.packId)) continue;
+        const dependencyPack = pending.get(dependency.packId);
+        if (!dependencyPack) {
+          throw new PackValidationError(`Missing pack dependency: ${dependency.packId}`);
+        }
+        visit(dependencyPack);
+      }
+      visiting.delete(pack.id);
+      visited.add(pack.id);
+      ordered.push(pack);
+    };
+    for (const pack of packs) visit(pack);
+    for (const pack of ordered) this.register(pack);
+  }
+
   compatibilityFingerprint(id: NamespacedId): Sha256Fingerprint | undefined {
     return this.#fingerprints.get(id);
   }
@@ -241,12 +278,53 @@ export class PackRegistry {
     );
   }
 
-  frameManifestFingerprint(): Sha256Fingerprint {
-    return fingerprintManifest(
-      [...this.#fingerprints.entries()]
-        .map(([id, fingerprint]) => ({ id, fingerprint }))
-        .sort((left, right) => left.id.localeCompare(right.id))
+  compatibilityComponents(
+    additional: readonly RuntimeCompatibilityComponent[] = []
+  ): readonly RuntimeCompatibilityComponent[] {
+    const packComponents = [...this.#packs.values()].flatMap((pack) => [
+      {
+        kind: "pack" as const,
+        id: pack.id,
+        version: pack.version,
+        fingerprint: this.#fingerprints.get(pack.id)!
+      },
+      ...(pack.domains ?? []).map((domain) => ({
+        kind: "domain" as const,
+        id: domain.id,
+        version: domain.version,
+        fingerprint: fingerprintGameDomain(domain)
+      })),
+      ...pack.stateSlices.map((slice) => ({
+        kind: "state-slice" as const,
+        id: slice.sliceId,
+        version: String(slice.schemaVersion)
+      })),
+      ...pack.frameContributors.map((contributor) => ({
+        kind: "frame-section" as const,
+        id: contributor.id,
+        version: String(contributor.schemaVersion)
+      }))
+    ]);
+    const components = [...packComponents, ...additional];
+    const keys = new Set<string>();
+    for (const component of components) {
+      this.assertNamespaced(component.id, `${component.kind} compatibility component`);
+      if (component.version.trim().length === 0) {
+        throw new PackValidationError(`Compatibility component version is required: ${component.id}`);
+      }
+      const key = `${component.kind}:${component.id}`;
+      if (keys.has(key)) throw new PackValidationError(`Duplicate compatibility component: ${key}`);
+      keys.add(key);
+    }
+    return components.sort((left, right) =>
+      `${left.kind}:${left.id}`.localeCompare(`${right.kind}:${right.id}`)
     );
+  }
+
+  frameManifestFingerprint(
+    additional: readonly RuntimeCompatibilityComponent[] = []
+  ): Sha256Fingerprint {
+    return fingerprintManifest(this.compatibilityComponents(additional));
   }
 
   fallbackPolicy(packId: NamespacedId): FallbackPolicy | undefined {

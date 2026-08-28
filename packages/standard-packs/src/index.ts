@@ -251,7 +251,10 @@ export const socialPack: CortexPack = pack({
         maxItems: 8,
         readsSlices: [],
         validate: isStringArray,
-        contribute: (_state, input) => input.socialSignals?.slice(0, 8) ?? []
+        contribute: (_state, input) => {
+          const signals = input.sectionInputs?.["cortex-social:signals"];
+          return isStringArray(signals) ? signals.slice(0, 8) : [];
+        }
       }
     ]
 });

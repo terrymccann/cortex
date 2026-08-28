@@ -81,6 +81,19 @@ export interface CognitiveFrameSection {
   readonly value: unknown;
 }
 
+export interface RuntimeCompatibilityComponent {
+  readonly kind:
+    | "domain"
+    | "pack"
+    | "state-slice"
+    | "frame-section"
+    | "constraint-matcher"
+    | "effect-matcher";
+  readonly id: NamespacedId;
+  readonly version: string;
+  readonly fingerprint?: string;
+}
+
 export interface CognitiveFrame {
   readonly schemaVersion: typeof CORTEX_COGNITIVE_FRAME_SCHEMA_VERSION;
   readonly frameId: string;
@@ -91,6 +104,7 @@ export interface CognitiveFrame {
   readonly activeObligations: readonly DecisionObligation[];
   readonly feasibleIntentions: readonly FeasibleIntention[];
   readonly manifestFingerprint: string;
+  readonly compatibilityComponents: readonly RuntimeCompatibilityComponent[];
   readonly sections: readonly CognitiveFrameSection[];
 }
 
@@ -109,14 +123,15 @@ export interface FrameBuildInput {
   readonly state: Readonly<AgentState>;
   readonly situationId: string;
   readonly situation: string;
-  readonly socialSignals?: readonly string[];
+  readonly sectionInputs?: Readonly<Partial<Record<NamespacedId, unknown>>>;
   readonly feasibleIntentions: readonly FeasibleIntention[];
 }
 
 export class FrameBuilder {
   constructor(
     private readonly contributors: readonly CognitiveFrameContributor[] = [],
-    private readonly manifestFingerprint: string = EMPTY_FRAME_MANIFEST_FINGERPRINT
+    private readonly manifestFingerprint: string = EMPTY_FRAME_MANIFEST_FINGERPRINT,
+    private readonly compatibilityComponents: readonly RuntimeCompatibilityComponent[] = []
   ) {
     if (!/^sha256:[a-f0-9]{64}$/.test(manifestFingerprint)) {
       throw new Error("Invalid cognitive-frame manifest fingerprint");
@@ -179,6 +194,7 @@ export class FrameBuilder {
       activeObligations: input.state.activeObligations,
       feasibleIntentions: input.feasibleIntentions,
       manifestFingerprint: this.manifestFingerprint,
+      compatibilityComponents: this.compatibilityComponents.map((component) => ({ ...component })),
       sections
     };
   }
@@ -284,6 +300,7 @@ export interface AcceptedDecisionRecord {
   readonly frameId: string;
   readonly frameHash: string;
   readonly manifestFingerprint: string;
+  readonly compatibilityComponents: readonly RuntimeCompatibilityComponent[];
   readonly frameSections: readonly {
     readonly id: NamespacedId;
     readonly schemaVersion: number;
@@ -359,6 +376,12 @@ export class ReplayControllerReasoner implements AcceptedDecisionReplayReasoner 
       throw new ReplayMismatchError(
         `Replay manifest fingerprint mismatch for ${frame.frameId}`,
         "replay-manifest-mismatch"
+      );
+    }
+    if (canonicalJson(record.compatibilityComponents) !== canonicalJson(frame.compatibilityComponents)) {
+      throw new ReplayMismatchError(
+        `Replay compatibility metadata mismatch for ${frame.frameId}`,
+        "replay-compatibility-mismatch"
       );
     }
     const frameSections = frame.sections.map(({ id, schemaVersion }) => ({ id, schemaVersion }));
@@ -552,7 +575,7 @@ export interface ControllerRequest {
   readonly agentId: AgentId;
   readonly situationId: string;
   readonly situation: string;
-  readonly socialSignals?: readonly string[];
+  readonly sectionInputs?: Readonly<Partial<Record<NamespacedId, unknown>>>;
   readonly now: SimTime;
   readonly signal?: AbortSignal;
 }
@@ -607,7 +630,7 @@ export class BoundedController {
       state,
       situationId: request.situationId,
       situation: request.situation,
-      ...(request.socialSignals === undefined ? {} : { socialSignals: request.socialSignals }),
+      ...(request.sectionInputs === undefined ? {} : { sectionInputs: request.sectionInputs }),
       feasibleIntentions: eligibleIntentions
     });
     const externalSignal = request.signal ?? new AbortController().signal;
@@ -711,6 +734,7 @@ export class BoundedController {
       frameId: frame.frameId,
       frameHash: hashCognitiveFrame(frame),
       manifestFingerprint: frame.manifestFingerprint,
+      compatibilityComponents: frame.compatibilityComponents.map((component) => ({ ...component })),
       frameSections: frame.sections.map(({ id, schemaVersion }) => ({ id, schemaVersion })),
       basedOnVersion: frame.basedOnVersion,
       eligibleIntentionIds: eligibleIntentions.map((candidate) => candidate.id),
@@ -870,6 +894,7 @@ const cloneDecisionRecord = (record: AcceptedDecisionRecord): AcceptedDecisionRe
   ...record,
   eligibleIntentionIds: [...record.eligibleIntentionIds],
   frameSections: record.frameSections.map((section) => ({ ...section })),
+  compatibilityComponents: record.compatibilityComponents.map((component) => ({ ...component })),
   output: cloneControllerOutput(record.output),
   enforcedObligationIds: [...record.enforcedObligationIds]
 });

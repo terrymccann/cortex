@@ -152,6 +152,44 @@ describe("BoundedController", () => {
       code: "replay-manifest-mismatch"
     });
     expect((await mismatchRuntime.store.snapshot(elena)).currentDecision).toBeUndefined();
+
+    const mismatchCases = [
+      {
+        code: "replay-frame-sections-mismatch",
+        record: {
+          ...records[0]!,
+          frameSections: [{ id: "test:changed-section" as const, schemaVersion: 2 }]
+        }
+      },
+      {
+        code: "replay-compatibility-mismatch",
+        record: {
+          ...records[0]!,
+          compatibilityComponents: [{
+            kind: "constraint-matcher" as const,
+            id: "test:available" as const,
+            version: "2"
+          }]
+        }
+      },
+      {
+        code: "replay-intentions-mismatch",
+        record: {
+          ...records[0]!,
+          eligibleIntentionIds: [...records[0]!.eligibleIntentionIds].reverse()
+        }
+      }
+    ];
+    for (const mismatch of mismatchCases) {
+      const runtime = await makeRuntime();
+      const replay = new BoundedController(
+        runtime.store,
+        runtime.world,
+        new ReplayControllerReasoner([mismatch.record])
+      );
+      await expect(replay.decide(request)).rejects.toMatchObject({ code: mismatch.code });
+      expect((await runtime.store.snapshot(elena)).currentDecision).toBeUndefined();
+    }
   });
 
   it("fails replay loudly when the cognitive frame differs", async () => {

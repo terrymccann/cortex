@@ -132,4 +132,35 @@ describe("PackRegistry", () => {
 
     expect(left.frameManifestFingerprint()).toBe(right.frameManifestFingerprint());
   });
+
+  it("registers an unordered dependency batch and rejects missing dependencies and cycles", () => {
+    const first = createPack("test:first", "test:first-state");
+    const second = {
+      ...createPack("test:second", "test:second-state"),
+      dependencies: [{ packId: "test:first" as const, versionRange: "1.0.0" }]
+    };
+    const registry = new PackRegistry();
+    registry.registerAll([second, first]);
+    expect(registry.pack("test:first")).toBeDefined();
+    expect(registry.pack("test:second")).toBeDefined();
+
+    expect(() => new PackRegistry().registerAll([second])).toThrow("Missing pack dependency");
+    const cyclicFirst = {
+      ...first,
+      dependencies: [{ packId: "test:second" as const, versionRange: "1.0.0" }]
+    };
+    expect(() => new PackRegistry().registerAll([cyclicFirst, second])).toThrow(
+      "Pack dependency cycle"
+    );
+  });
+
+  it("includes explicit matcher versions in runtime compatibility", () => {
+    const registry = new PackRegistry();
+    registry.register(createPack("test:first", "test:counter"));
+    const v1 = [{ kind: "constraint-matcher" as const, id: "test:available" as const, version: "1" }];
+    const v2 = [{ kind: "constraint-matcher" as const, id: "test:available" as const, version: "2" }];
+
+    expect(registry.compatibilityComponents(v1)).toContainEqual(v1[0]);
+    expect(registry.frameManifestFingerprint(v1)).not.toBe(registry.frameManifestFingerprint(v2));
+  });
 });
