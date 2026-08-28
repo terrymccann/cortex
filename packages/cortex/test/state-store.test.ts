@@ -8,7 +8,10 @@ import {
 import { describe, expect, it } from "vitest";
 import { type PatchEnvelope } from "../src/patches.js";
 import { createAgentState } from "../src/state.js";
-import { InMemoryAgentStateStore } from "../src/state-store.js";
+import {
+  InMemoryAgentStateStore,
+  type StateSliceReducer
+} from "../src/state-store.js";
 
 const elena = asAgentId("elena");
 const marcus = asAgentId("marcus");
@@ -218,5 +221,80 @@ describe("InMemoryAgentStateStore", () => {
 
     expect(result).toEqual({ status: "rejected", reason: "invalid-value" });
     expect((await store.snapshot(elena)).activeObligations).toEqual([]);
+  });
+});
+
+describe("versioned state-slice ownership", () => {
+  const reducer: StateSliceReducer = {
+    sliceId: "test:counter",
+    schemaVersion: 2,
+    writerModules: ["test:counter-writer"],
+    initialState: () => ({ value: 0 }),
+    validate: (value) =>
+      typeof value === "object" &&
+      value !== null &&
+      typeof (value as { value?: unknown }).value === "number",
+    reduce: (current, operation) => ({
+      value:
+        (current as { value: number }).value +
+        (operation as { increment: number }).increment
+    })
+  };
+
+  it("stores slice schema metadata and rejects undeclared writers", async () => {
+    const store = new InMemoryAgentStateStore([reducer]);
+    await store.register(
+      createAgentState(
+        {
+          id: elena,
+          identity: { name: "Elena" },
+          slices: { "test:counter": { schemaVersion: 2, value: { value: 1 } } }
+        },
+        asSimTime(0)
+      )
+    );
+    const envelope = {
+      patchId: "counter-1",
+      agentId: elena,
+      module: "test:counter-writer",
+      basedOnVersion: 0,
+      worldVersion: 0,
+      observedThroughSequence: 0,
+      triggeredBy: [],
+      idempotencyKey: "counter-1",
+      rebasePolicy: "never" as const,
+      createdAt: asSimTime(1),
+      patch: {
+        kind: "state-slice" as const,
+        sliceId: "test:counter",
+        operation: { increment: 2 }
+      }
+    };
+
+    expect(await store.apply({ ...envelope, module: "test:intruder" })).toEqual({
+      status: "rejected",
+      reason: "state-slice-ownership"
+    });
+    expect(await store.apply(envelope)).toEqual({ status: "applied", stateVersion: 1 });
+    expect((await store.snapshot(elena)).slices["test:counter"]).toEqual({
+      schemaVersion: 2,
+      value: { value: 3 }
+    });
+  });
+
+  it("rejects incompatible initial slice schemas", async () => {
+    const store = new InMemoryAgentStateStore([reducer]);
+    await expect(
+      store.register(
+        createAgentState(
+          {
+            id: elena,
+            identity: { name: "Elena" },
+            slices: { "test:counter": { schemaVersion: 1, value: { value: 0 } } }
+          },
+          asSimTime(0)
+        )
+      )
+    ).rejects.toThrow("State-slice schema mismatch");
   });
 });

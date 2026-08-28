@@ -1,4 +1,4 @@
-import type { AgentId, SimTime } from "@cortex/contracts";
+import type { AgentId, NamespacedId, SimTime } from "@cortex/contracts";
 import { ownedPatchKinds, type PatchEnvelope } from "./patches.js";
 import type { AgentState, Relationship } from "./state.js";
 
@@ -25,8 +25,9 @@ export interface AgentStateStore {
 }
 
 export interface StateSliceReducer {
-  readonly sliceId: string;
-  readonly module: string;
+  readonly sliceId: NamespacedId;
+  readonly schemaVersion: number;
+  readonly writerModules: readonly NamespacedId[];
   initialState(): unknown;
   validate(value: unknown): boolean;
   reduce(current: unknown, operation: unknown): unknown;
@@ -126,12 +127,28 @@ export class InMemoryAgentStateStore implements AgentStateStore {
       if (this.#sliceReducers.has(reducer.sliceId)) {
         throw new Error(`Duplicate state-slice reducer: ${reducer.sliceId}`);
       }
+      if (!Number.isInteger(reducer.schemaVersion) || reducer.schemaVersion < 1) {
+        throw new Error(`Invalid state-slice schema version: ${reducer.sliceId}`);
+      }
+      if (reducer.writerModules.length === 0) {
+        throw new Error(`State slice has no writer modules: ${reducer.sliceId}`);
+      }
       this.#sliceReducers.set(reducer.sliceId, reducer);
     }
   }
 
   async register(state: AgentState): Promise<void> {
     if (this.#states.has(state.id)) throw new Error(`Agent already registered: ${state.id}`);
+    for (const [sliceId, slice] of Object.entries(state.slices)) {
+      const reducer = this.#sliceReducers.get(sliceId);
+      if (!reducer) throw new Error(`Unknown initial state slice: ${sliceId}`);
+      if (slice.schemaVersion !== reducer.schemaVersion) {
+        throw new Error(`State-slice schema mismatch: ${sliceId}`);
+      }
+      if (!reducer.validate(slice.value)) {
+        throw new Error(`Invalid initial state slice: ${sliceId}`);
+      }
+    }
     this.#states.set(state.id, clone(state));
   }
 
@@ -158,7 +175,7 @@ export class InMemoryAgentStateStore implements AgentStateStore {
     if (envelope.patch.kind === "state-slice") {
       const reducer = this.#sliceReducers.get(envelope.patch.sliceId);
       if (!reducer) return { status: "rejected", reason: "unknown-state-slice" };
-      if (reducer.module !== envelope.module) {
+      if (!reducer.writerModules.some((moduleId) => moduleId === envelope.module)) {
         return { status: "rejected", reason: "state-slice-ownership" };
       }
     } else if (!(ownedPatchKinds[envelope.module] ?? []).includes(envelope.patch.kind)) {
@@ -206,7 +223,14 @@ export class InMemoryAgentStateStore implements AgentStateStore {
     let next: AgentState;
     if (envelope.patch.kind === "state-slice") {
       const reducer = this.#sliceReducers.get(envelope.patch.sliceId)!;
-      const current = state.slices[envelope.patch.sliceId] ?? reducer.initialState();
+      const currentSlice = state.slices[envelope.patch.sliceId];
+      if (
+        currentSlice !== undefined &&
+        currentSlice.schemaVersion !== reducer.schemaVersion
+      ) {
+        return { status: "rejected", reason: "invalid-value" };
+      }
+      const current = currentSlice?.value ?? reducer.initialState();
       let reduced: unknown;
       try {
         reduced = reducer.reduce(clone(current), clone(envelope.patch.operation));
@@ -218,7 +242,13 @@ export class InMemoryAgentStateStore implements AgentStateStore {
         ...state,
         version: state.version + 1,
         updatedAt: envelope.createdAt,
-        slices: { ...state.slices, [envelope.patch.sliceId]: clone(reduced) }
+        slices: {
+          ...state.slices,
+          [envelope.patch.sliceId]: {
+            schemaVersion: reducer.schemaVersion,
+            value: clone(reduced)
+          }
+        }
       };
     } else {
       next = reducePatch(state, envelope);

@@ -6,6 +6,7 @@ import {
   type EntityRef,
   type FeasibleIntention,
   type FollowUpObligationSpec,
+  type NamespacedId,
   type SimTime
 } from "@cortex/contracts";
 import type { PatchEnvelope } from "./patches.js";
@@ -69,25 +70,39 @@ export class DecisionGate {
   }
 }
 
+export const CORTEX_COGNITIVE_FRAME_SCHEMA_V1 = "cortex-cognitive-frame-v1" as const;
+export const CORTEX_COGNITIVE_FRAME_SCHEMA_V2 = "cortex-cognitive-frame-v2" as const;
+export const CORTEX_COGNITIVE_FRAME_SCHEMA_VERSION = CORTEX_COGNITIVE_FRAME_SCHEMA_V2;
+export const EMPTY_FRAME_MANIFEST_FINGERPRINT = `sha256:${"0".repeat(64)}`;
+
+export interface CognitiveFrameSection {
+  readonly id: NamespacedId;
+  readonly schemaVersion: number;
+  readonly value: unknown;
+}
+
 export interface CognitiveFrame {
+  readonly schemaVersion: typeof CORTEX_COGNITIVE_FRAME_SCHEMA_VERSION;
   readonly frameId: string;
   readonly agentId: AgentId;
   readonly basedOnVersion: number;
   readonly situationId: string;
   readonly situation: string;
-  readonly activeGoals: AgentState["goals"];
-  readonly relevantBeliefs: AgentState["beliefs"];
-  readonly relevantMemories: AgentState["memories"];
-  readonly importantRelationships: AgentState["relationships"];
-  readonly socialSignals: readonly string[];
   readonly activeObligations: readonly DecisionObligation[];
   readonly feasibleIntentions: readonly FeasibleIntention[];
-  readonly extensions: Readonly<Record<string, unknown>>;
+  readonly manifestFingerprint: string;
+  readonly sections: readonly CognitiveFrameSection[];
 }
 
 export interface CognitiveFrameContributor {
-  readonly id: string;
-  contribute(state: Readonly<AgentState>): unknown;
+  readonly id: NamespacedId;
+  readonly ownerPackId: NamespacedId;
+  readonly schemaVersion: number;
+  readonly maxBytes: number;
+  readonly maxItems?: number;
+  readonly readsSlices: readonly NamespacedId[];
+  validate(value: unknown): boolean;
+  contribute(state: Readonly<AgentState>, input: Readonly<FrameBuildInput>): unknown;
 }
 
 export interface FrameBuildInput {
@@ -99,35 +114,72 @@ export interface FrameBuildInput {
 }
 
 export class FrameBuilder {
-  constructor(private readonly contributors: readonly CognitiveFrameContributor[] = []) {}
+  constructor(
+    private readonly contributors: readonly CognitiveFrameContributor[] = [],
+    private readonly manifestFingerprint: string = EMPTY_FRAME_MANIFEST_FINGERPRINT
+  ) {
+    if (!/^sha256:[a-f0-9]{64}$/.test(manifestFingerprint)) {
+      throw new Error("Invalid cognitive-frame manifest fingerprint");
+    }
+    const sectionIds = new Set<NamespacedId>();
+    for (const contributor of contributors) {
+      if (!/^[a-z][a-z0-9-]*:[a-z][a-z0-9-]*$/.test(contributor.id)) {
+        throw new Error(`Invalid cognitive-frame section id: ${contributor.id}`);
+      }
+      if (!/^[a-z][a-z0-9-]*:[a-z][a-z0-9-]*$/.test(contributor.ownerPackId)) {
+        throw new Error(`Invalid cognitive-frame section owner: ${contributor.id}`);
+      }
+      if (sectionIds.has(contributor.id)) {
+        throw new Error(`Duplicate cognitive-frame section: ${contributor.id}`);
+      }
+      sectionIds.add(contributor.id);
+      if (!Number.isInteger(contributor.schemaVersion) || contributor.schemaVersion < 1) {
+        throw new Error(`Invalid cognitive-frame section schema version: ${contributor.id}`);
+      }
+      if (!Number.isInteger(contributor.maxBytes) || contributor.maxBytes < 1) {
+        throw new Error(`Invalid cognitive-frame section byte budget: ${contributor.id}`);
+      }
+      if (
+        contributor.maxItems !== undefined &&
+        (!Number.isInteger(contributor.maxItems) || contributor.maxItems < 0)
+      ) {
+        throw new Error(`Invalid cognitive-frame section item budget: ${contributor.id}`);
+      }
+    }
+  }
 
   build(input: FrameBuildInput): CognitiveFrame {
+    const sections = [...this.contributors]
+      .sort((left, right) => left.id.localeCompare(right.id))
+      .map((contributor): CognitiveFrameSection => {
+        const value = contributor.contribute(input.state, input);
+        if (!contributor.validate(value)) {
+          throw new Error(`Invalid cognitive-frame section: ${contributor.id}`);
+        }
+        if (
+          contributor.maxItems !== undefined &&
+          Array.isArray(value) &&
+          value.length > contributor.maxItems
+        ) {
+          throw new Error(`Cognitive-frame section item budget exceeded: ${contributor.id}`);
+        }
+        const bytes = Buffer.byteLength(canonicalJson(value), "utf8");
+        if (bytes > contributor.maxBytes) {
+          throw new Error(`Cognitive-frame section byte budget exceeded: ${contributor.id}`);
+        }
+        return { id: contributor.id, schemaVersion: contributor.schemaVersion, value };
+      });
     return {
+      schemaVersion: CORTEX_COGNITIVE_FRAME_SCHEMA_VERSION,
       frameId: `${input.state.id}:${input.situationId}:v${input.state.version}`,
       agentId: input.state.id,
       basedOnVersion: input.state.version,
       situationId: input.situationId,
       situation: input.situation,
-      activeGoals: input.state.goals.filter((goal) => goal.status === "active").slice(0, 5),
-      relevantBeliefs: [...input.state.beliefs]
-        .sort((left, right) => right.confidence - left.confidence)
-        .slice(0, 8),
-      relevantMemories: [...input.state.memories]
-        .sort((left, right) => right.importance - left.importance)
-        .slice(0, 8),
-      importantRelationships: [...input.state.relationships]
-        .sort(
-          (left, right) =>
-            Math.max(Math.abs(right.trust), Math.abs(right.resentment), Math.abs(right.fear)) -
-            Math.max(Math.abs(left.trust), Math.abs(left.resentment), Math.abs(left.fear))
-        )
-        .slice(0, 6),
-      socialSignals: input.socialSignals?.slice(0, 8) ?? [],
       activeObligations: input.state.activeObligations,
       feasibleIntentions: input.feasibleIntentions,
-      extensions: Object.fromEntries(
-        this.contributors.map((contributor) => [contributor.id, contributor.contribute(input.state)])
-      )
+      manifestFingerprint: this.manifestFingerprint,
+      sections
     };
   }
 }
@@ -228,8 +280,14 @@ export const CORTEX_ACCEPTED_DECISION_RECORD_SCHEMA_VERSION =
 
 export interface AcceptedDecisionRecord {
   readonly schemaVersion: typeof CORTEX_ACCEPTED_DECISION_RECORD_SCHEMA_VERSION;
+  readonly frameSchemaVersion: typeof CORTEX_COGNITIVE_FRAME_SCHEMA_VERSION;
   readonly frameId: string;
   readonly frameHash: string;
+  readonly manifestFingerprint: string;
+  readonly frameSections: readonly {
+    readonly id: NamespacedId;
+    readonly schemaVersion: number;
+  }[];
   readonly basedOnVersion: number;
   readonly eligibleIntentionIds: readonly string[];
   readonly output: ControllerOutput;
@@ -289,6 +347,25 @@ export class ReplayControllerReasoner implements AcceptedDecisionReplayReasoner 
       throw new ReplayMismatchError(
         `Unsupported decision record schema: ${String(record.schemaVersion)}`,
         "replay-schema-mismatch"
+      );
+    }
+    if (record.frameSchemaVersion !== frame.schemaVersion) {
+      throw new ReplayMismatchError(
+        `Replay frame schema mismatch for ${frame.frameId}`,
+        "replay-frame-schema-mismatch"
+      );
+    }
+    if (record.manifestFingerprint !== frame.manifestFingerprint) {
+      throw new ReplayMismatchError(
+        `Replay manifest fingerprint mismatch for ${frame.frameId}`,
+        "replay-manifest-mismatch"
+      );
+    }
+    const frameSections = frame.sections.map(({ id, schemaVersion }) => ({ id, schemaVersion }));
+    if (canonicalJson(record.frameSections) !== canonicalJson(frameSections)) {
+      throw new ReplayMismatchError(
+        `Replay frame-section metadata mismatch for ${frame.frameId}`,
+        "replay-frame-sections-mismatch"
       );
     }
     if (record.frameId !== frame.frameId) {
@@ -630,8 +707,11 @@ export class BoundedController {
     if (applyResult.status !== "applied") return { status: "stale", applyResult };
     await this.recordAcceptedDecision({
       schemaVersion: CORTEX_ACCEPTED_DECISION_RECORD_SCHEMA_VERSION,
+      frameSchemaVersion: frame.schemaVersion,
       frameId: frame.frameId,
       frameHash: hashCognitiveFrame(frame),
+      manifestFingerprint: frame.manifestFingerprint,
+      frameSections: frame.sections.map(({ id, schemaVersion }) => ({ id, schemaVersion })),
       basedOnVersion: frame.basedOnVersion,
       eligibleIntentionIds: eligibleIntentions.map((candidate) => candidate.id),
       output,
@@ -789,6 +869,7 @@ const cloneControllerOutput = (output: ControllerOutput): ControllerOutput => ({
 const cloneDecisionRecord = (record: AcceptedDecisionRecord): AcceptedDecisionRecord => ({
   ...record,
   eligibleIntentionIds: [...record.eligibleIntentionIds],
+  frameSections: record.frameSections.map((section) => ({ ...section })),
   output: cloneControllerOutput(record.output),
   enforcedObligationIds: [...record.enforcedObligationIds]
 });

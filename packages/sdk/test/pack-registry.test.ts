@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { NamespacedId } from "@cortex/domain";
 import type { CortexPack } from "../src/index.js";
 import {
   fingerprintPackCompatibility,
@@ -6,7 +7,7 @@ import {
   PackValidationError
 } from "../src/index.js";
 
-const createPack = (id: "test:first" | "test:second", sliceId: string): CortexPack => {
+const createPack = (id: "test:first" | "test:second", sliceId: NamespacedId): CortexPack => {
   const suffix = id === "test:first" ? "first" : "second";
   return {
     id,
@@ -16,7 +17,8 @@ const createPack = (id: "test:first" | "test:second", sliceId: string): CortexPa
     stateSlices: [
       {
         sliceId,
-        module: `test:${suffix}-module`,
+        schemaVersion: 1,
+        writerModules: [`test:${suffix}-module`],
         initialState: () => ({ value: 0 }),
         validate: (value) =>
           typeof value === "object" &&
@@ -33,13 +35,21 @@ const createPack = (id: "test:first" | "test:second", sliceId: string): CortexPa
       {
         id: `test:${suffix}-module`,
         cost: "deterministic",
-        description: "Test module"
+        description: "Test module",
+        readsSlices: [sliceId],
+        writesSlices: [sliceId]
       }
     ],
     frameContributors: [
       {
         id: `test:${suffix}-frame`,
-        contribute: (state) => state.slices[sliceId]
+        ownerPackId: id,
+        schemaVersion: 1,
+        maxBytes: 1024,
+        maxItems: 1,
+        readsSlices: [sliceId],
+        validate: (value) => typeof value === "object" && value !== null,
+        contribute: (state) => state.slices[sliceId]?.value
       }
     ]
   };
@@ -50,7 +60,9 @@ describe("PackRegistry", () => {
     const registry = new PackRegistry();
     registry.register(createPack("test:first", "test:counter"));
 
-    expect(registry.initialSlices()).toEqual({ "test:counter": { value: 0 } });
+    expect(registry.initialSlices()).toEqual({
+      "test:counter": { schemaVersion: 1, value: { value: 0 } }
+    });
     expect(registry.stateSliceReducers()).toHaveLength(1);
     expect(registry.frameContributors()).toHaveLength(1);
     expect(registry.compatibilityFingerprint("test:first")).toBe(
@@ -86,5 +98,38 @@ describe("PackRegistry", () => {
       fingerprintPackCompatibility(first)
     );
     expect(fingerprintPackCompatibility(first)).toMatch(/^sha256:[a-f0-9]{64}$/);
+  });
+
+  it("rejects undeclared slice writers and frame-section dependencies", () => {
+    const registry = new PackRegistry();
+    const base = createPack("test:first", "test:counter");
+    expect(() =>
+      registry.register({
+        ...base,
+        stateSlices: [{ ...base.stateSlices[0]!, writerModules: ["test:missing-module"] }]
+      })
+    ).toThrow("is not declared by pack");
+
+    expect(() =>
+      new PackRegistry().register({
+        ...base,
+        frameContributors: [
+          { ...base.frameContributors[0]!, readsSlices: ["test:undeclared"] }
+        ]
+      })
+    ).toThrow("Undeclared frame-section slice dependency");
+  });
+
+  it("makes frame compatibility independent of pack registration order", () => {
+    const first = createPack("test:first", "test:first-state");
+    const second = createPack("test:second", "test:second-state");
+    const left = new PackRegistry();
+    left.register(first);
+    left.register(second);
+    const right = new PackRegistry();
+    right.register(second);
+    right.register(first);
+
+    expect(left.frameManifestFingerprint()).toBe(right.frameManifestFingerprint());
   });
 });

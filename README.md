@@ -31,6 +31,9 @@ That document also records the parked emergent-autonomy roadmap and the
 long-term goal of a designer-facing toolkit for building living AI worlds.
 The prerequisite contract-generalization work is specified in
 [docs/phase-3.0-core-generalization.md](docs/phase-3.0-core-generalization.md).
+
+Slice C composition and compatibility notes are in
+[docs/phase-3.0-slice-c-composition.md](docs/phase-3.0-slice-c-composition.md).
 The bounded goal formation and capability-planning layer that follows is
 specified in
 [docs/phase-3.1-bounded-emergent-autonomy.md](docs/phase-3.1-bounded-emergent-autonomy.md).

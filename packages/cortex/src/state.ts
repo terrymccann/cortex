@@ -113,24 +113,43 @@ export interface ActionExpectation {
   readonly resolutionEventIds: readonly EventId[];
 }
 
-export interface AgentState {
+export interface StateSliceState {
+  readonly schemaVersion: number;
+  readonly value: unknown;
+}
+
+export interface AgentRuntimeEnvelope {
   readonly id: AgentId;
   readonly version: number;
   readonly updatedAt: SimTime;
   readonly identity: Identity;
-  readonly personality: Readonly<Record<string, number>>;
   readonly resolution: CognitiveResolution;
   readonly perception: readonly PerceivedObservation[];
-  readonly beliefs: readonly Belief[];
-  readonly relationships: readonly Relationship[];
-  readonly memories: readonly EpisodicMemory[];
-  readonly goals: readonly Goal[];
-  readonly activePlan: PlanState | undefined;
   readonly currentDecision?: CommittedDecision;
   readonly activeObligations: readonly DecisionObligation[];
-  readonly lastCommunication: CommunicationRecord | undefined;
   readonly expectations: readonly ActionExpectation[];
-  readonly slices: Readonly<Record<string, unknown>>;
+  readonly slices: Readonly<Record<string, StateSliceState>>;
+}
+
+/**
+ * Transitional Phase 3.0 state shape. The runtime envelope is stable; optional
+ * fixed fields remain only until their implementations move into packs in Slice D.
+ */
+export interface AgentState extends AgentRuntimeEnvelope {
+  /** @deprecated Owned by the cortex:traits pack. */
+  readonly personality: Readonly<Record<string, number>>;
+  /** @deprecated Owned by the cortex:beliefs pack. */
+  readonly beliefs: readonly Belief[];
+  /** @deprecated Owned by the cortex:social pack. */
+  readonly relationships: readonly Relationship[];
+  /** @deprecated Owned by the cortex:memory pack. */
+  readonly memories: readonly EpisodicMemory[];
+  /** @deprecated Owned by the cortex:goals pack. */
+  readonly goals: readonly Goal[];
+  /** @deprecated Owned by the cortex:planning pack. */
+  readonly activePlan: PlanState | undefined;
+  /** @deprecated Owned by the cortex:conversation pack. */
+  readonly lastCommunication: CommunicationRecord | undefined;
 }
 
 export interface AgentSeed {
@@ -143,7 +162,7 @@ export interface AgentSeed {
   readonly memories?: readonly EpisodicMemory[];
   readonly goals?: readonly Goal[];
   readonly activeObligations?: readonly DecisionObligation[];
-  readonly slices?: Readonly<Record<string, unknown>>;
+  readonly slices?: Readonly<Record<string, StateSliceState>>;
 }
 
 export function createAgentState(seed: AgentSeed, now: SimTime): AgentState {

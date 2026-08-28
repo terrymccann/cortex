@@ -1,4 +1,4 @@
-import type { AgentId, EventId, SimTime } from "@cortex/contracts";
+import type { AgentId, EventId, NamespacedId, SimTime } from "@cortex/contracts";
 import type {
   ActionExpectation,
   CommittedDecision,
@@ -65,7 +65,7 @@ export interface CommunicationPatch {
 
 export interface StateSlicePatch {
   readonly kind: "state-slice";
-  readonly sliceId: string;
+  readonly sliceId: NamespacedId;
   readonly operation: unknown;
 }
 

@@ -22,6 +22,7 @@ import {
 } from "../src/decision.js";
 import { FakeWorld } from "../src/fake-world.js";
 import { CortexKernel } from "../src/kernel.js";
+import { createAgentState } from "../src/state.js";
 import { InMemoryAgentStateStore } from "../src/state-store.js";
 
 const elena = asAgentId("elena");
@@ -119,6 +120,9 @@ describe("BoundedController", () => {
     expect(records).toHaveLength(1);
     expect(records[0]?.output.intentionId).toBe("pretend-to-accept");
     expect(records[0]?.frameHash).toMatch(/^[a-f0-9]{64}$/);
+    expect(records[0]?.frameSchemaVersion).toBe("cortex-cognitive-frame-v2");
+    expect(records[0]?.manifestFingerprint).toMatch(/^sha256:[a-f0-9]{64}$/);
+    expect(records[0]?.frameSections).toEqual([]);
 
     const replayRuntime = await makeRuntime();
     const replayReasoner = new ReplayControllerReasoner(records);
@@ -135,6 +139,19 @@ describe("BoundedController", () => {
     );
     expect(replayReasoner.consumedCount()).toBe(1);
     expect(replayReasoner.remainingCount()).toBe(0);
+
+    const mismatchRuntime = await makeRuntime();
+    const manifestMismatch = new BoundedController(
+      mismatchRuntime.store,
+      mismatchRuntime.world,
+      new ReplayControllerReasoner([
+        { ...records[0]!, manifestFingerprint: `sha256:${"f".repeat(64)}` }
+      ])
+    );
+    await expect(manifestMismatch.decide(request)).rejects.toMatchObject({
+      code: "replay-manifest-mismatch"
+    });
+    expect((await mismatchRuntime.store.snapshot(elena)).currentDecision).toBeUndefined();
   });
 
   it("fails replay loudly when the cognitive frame differs", async () => {
@@ -604,5 +621,48 @@ describe("constrainIntentionsByObligations", () => {
 
     expect(result.eligibleIntentions.map((intention) => intention.id)).toEqual(["retreat"]);
     expect(result.dueObligations.map((obligation) => obligation.id)).toEqual(["obligation:test"]);
+  });
+});
+
+describe("FrameBuilder composition", () => {
+  const state = createAgentState({ id: elena, identity: { name: "Elena" } }, asSimTime(0));
+  const input = {
+    state,
+    situationId: "test",
+    situation: "A bounded test situation",
+    feasibleIntentions: []
+  };
+  const contributor = (id: `test:${string}`, value: unknown, maxBytes = 1024) => ({
+    id,
+    ownerPackId: "test:pack" as const,
+    schemaVersion: 1,
+    maxBytes,
+    readsSlices: [] as const,
+    validate: () => true,
+    contribute: () => value
+  });
+
+  it("sorts versioned sections deterministically and hashes manifest metadata", () => {
+    const frame = new FrameBuilder(
+      [contributor("test:z", { value: 2 }), contributor("test:a", { value: 1 })],
+      `sha256:${"a".repeat(64)}`
+    ).build(input);
+
+    expect(frame.sections.map((section) => section.id)).toEqual(["test:a", "test:z"]);
+    expect(frame.manifestFingerprint).toBe(`sha256:${"a".repeat(64)}`);
+  });
+
+  it("rejects duplicate, invalid, and over-budget sections before reasoning", () => {
+    expect(() =>
+      new FrameBuilder([contributor("test:same", 1), contributor("test:same", 2)]).build(input)
+    ).toThrow("Duplicate cognitive-frame section");
+    expect(() =>
+      new FrameBuilder([
+        { ...contributor("test:invalid", 1), validate: () => false }
+      ]).build(input)
+    ).toThrow("Invalid cognitive-frame section");
+    expect(() =>
+      new FrameBuilder([contributor("test:large", "too large", 2)]).build(input)
+    ).toThrow("byte budget exceeded");
   });
 });

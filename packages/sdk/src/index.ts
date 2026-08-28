@@ -26,6 +26,8 @@ export interface CognitiveModuleDefinition {
   readonly id: NamespacedId;
   readonly cost: "deterministic" | "small-model" | "reasoning-model";
   readonly description: string;
+  readonly readsSlices: readonly NamespacedId[];
+  readonly writesSlices: readonly NamespacedId[];
 }
 
 export interface CortexPack {
@@ -53,14 +55,31 @@ export const fingerprintPackCompatibility = (pack: CortexPack): Sha256Fingerprin
       .map((domain) => ({ id: domain.id, fingerprint: fingerprintGameDomain(domain) }))
       .sort((left, right) => left.id.localeCompare(right.id)),
     stateSlices: pack.stateSlices
-      .map((slice) => ({ sliceId: slice.sliceId, module: slice.module }))
+      .map((slice) => ({
+        sliceId: slice.sliceId,
+        schemaVersion: slice.schemaVersion,
+        writerModules: [...slice.writerModules].sort()
+      }))
       .sort((left, right) => left.sliceId.localeCompare(right.sliceId)),
     modules: pack.modules
-      .map((module) => ({ ...module }))
+      .map((module) => ({
+        id: module.id,
+        cost: module.cost,
+        description: module.description,
+        readsSlices: [...module.readsSlices].sort(),
+        writesSlices: [...module.writesSlices].sort()
+      }))
       .sort((left, right) => left.id.localeCompare(right.id)),
     frameContributors: pack.frameContributors
-      .map((contributor) => contributor.id)
-      .sort((left, right) => left.localeCompare(right)),
+      .map((contributor) => ({
+        id: contributor.id,
+        ownerPackId: contributor.ownerPackId,
+        schemaVersion: contributor.schemaVersion,
+        maxBytes: contributor.maxBytes,
+        maxItems: contributor.maxItems,
+        readsSlices: [...contributor.readsSlices].sort()
+      }))
+      .sort((left, right) => left.id.localeCompare(right.id)),
     hasFallbackPolicy: pack.fallbackPolicy !== undefined
   });
 
@@ -94,12 +113,35 @@ export class PackRegistry {
         );
       }
     }
+    const localSliceIds = new Set<string>();
+    const localModuleIds = new Set<string>();
+    const localFrameIds = new Set<string>();
     for (const slice of pack.stateSlices) {
       this.assertNamespaced(slice.sliceId, "state slice");
-      this.assertNamespaced(slice.module, "state-slice module");
       this.assertUnowned(this.#sliceOwners, slice.sliceId, "state slice");
-      if (slice.module.trim().length === 0) {
-        throw new PackValidationError(`State slice module is required: ${slice.sliceId}`);
+      if (localSliceIds.has(slice.sliceId)) {
+        throw new PackValidationError(`Duplicate state slice in pack: ${slice.sliceId}`);
+      }
+      localSliceIds.add(slice.sliceId);
+      if (!Number.isInteger(slice.schemaVersion) || slice.schemaVersion < 1) {
+        throw new PackValidationError(`Invalid state-slice schema version: ${slice.sliceId}`);
+      }
+      if (slice.writerModules.length === 0) {
+        throw new PackValidationError(`State slice has no writer modules: ${slice.sliceId}`);
+      }
+      for (const moduleId of slice.writerModules) {
+        this.assertNamespaced(moduleId, "state-slice writer module");
+        if (!pack.modules.some((module) => module.id === moduleId)) {
+          throw new PackValidationError(
+            `State-slice writer ${moduleId} is not declared by pack ${pack.id}`
+          );
+        }
+        const module = pack.modules.find((candidate) => candidate.id === moduleId)!;
+        if (!module.writesSlices.includes(slice.sliceId)) {
+          throw new PackValidationError(
+            `State-slice writer ${moduleId} does not declare write access to ${slice.sliceId}`
+          );
+        }
       }
       const initial = slice.initialState();
       if (!slice.validate(initial)) {
@@ -109,10 +151,62 @@ export class PackRegistry {
     for (const module of pack.modules) {
       this.assertNamespaced(module.id, "module");
       this.assertUnowned(this.#moduleOwners, module.id, "module");
+      if (localModuleIds.has(module.id)) {
+        throw new PackValidationError(`Duplicate module in pack: ${module.id}`);
+      }
+      localModuleIds.add(module.id);
+      for (const sliceId of [...module.readsSlices, ...module.writesSlices]) {
+        this.assertNamespaced(sliceId, `module slice reference for ${module.id}`);
+      }
+      for (const sliceId of module.writesSlices) {
+        const slice = pack.stateSlices.find((candidate) => candidate.sliceId === sliceId);
+        if (!slice || !slice.writerModules.includes(module.id)) {
+          throw new PackValidationError(`Undeclared state-slice write ${module.id} -> ${sliceId}`);
+        }
+      }
+      for (const sliceId of module.readsSlices) {
+        const local = pack.stateSlices.some((slice) => slice.sliceId === sliceId);
+        const dependencyOwned = pack.dependencies.some(
+          (dependency) => this.#sliceOwners.get(sliceId) === dependency.packId
+        );
+        if (!local && !dependencyOwned) {
+          throw new PackValidationError(`Undeclared state-slice read ${module.id} -> ${sliceId}`);
+        }
+      }
     }
     for (const contributor of pack.frameContributors) {
       this.assertNamespaced(contributor.id, "frame contributor");
       this.assertUnowned(this.#frameOwners, contributor.id, "frame contributor");
+      if (localFrameIds.has(contributor.id)) {
+        throw new PackValidationError(`Duplicate frame contributor in pack: ${contributor.id}`);
+      }
+      localFrameIds.add(contributor.id);
+      if (contributor.ownerPackId !== pack.id) {
+        throw new PackValidationError(`Frame contributor ${contributor.id} has the wrong owner`);
+      }
+      if (!Number.isInteger(contributor.schemaVersion) || contributor.schemaVersion < 1) {
+        throw new PackValidationError(`Invalid frame-section schema version: ${contributor.id}`);
+      }
+      if (!Number.isInteger(contributor.maxBytes) || contributor.maxBytes < 1) {
+        throw new PackValidationError(`Invalid frame-section byte budget: ${contributor.id}`);
+      }
+      if (
+        contributor.maxItems !== undefined &&
+        (!Number.isInteger(contributor.maxItems) || contributor.maxItems < 0)
+      ) {
+        throw new PackValidationError(`Invalid frame-section item budget: ${contributor.id}`);
+      }
+      for (const sliceId of contributor.readsSlices) {
+        const local = pack.stateSlices.some((slice) => slice.sliceId === sliceId);
+        const dependencyOwned = pack.dependencies.some(
+          (dependency) => this.#sliceOwners.get(sliceId) === dependency.packId
+        );
+        if (!local && !dependencyOwned) {
+          throw new PackValidationError(
+            `Undeclared frame-section slice dependency ${contributor.id} -> ${sliceId}`
+          );
+        }
+      }
     }
 
     this.#packs.set(pack.id, pack);
@@ -138,9 +232,20 @@ export class PackRegistry {
     return [...this.#packs.values()].flatMap((pack) => pack.frameContributors);
   }
 
-  initialSlices(): Readonly<Record<string, unknown>> {
+  initialSlices(): Readonly<Record<string, { readonly schemaVersion: number; readonly value: unknown }>> {
     return Object.fromEntries(
-      this.stateSliceReducers().map((slice) => [slice.sliceId, structuredClone(slice.initialState())])
+      this.stateSliceReducers().map((slice) => [
+        slice.sliceId,
+        { schemaVersion: slice.schemaVersion, value: structuredClone(slice.initialState()) }
+      ])
+    );
+  }
+
+  frameManifestFingerprint(): Sha256Fingerprint {
+    return fingerprintManifest(
+      [...this.#fingerprints.entries()]
+        .map(([id, fingerprint]) => ({ id, fingerprint }))
+        .sort((left, right) => left.id.localeCompare(right.id))
     );
   }
 

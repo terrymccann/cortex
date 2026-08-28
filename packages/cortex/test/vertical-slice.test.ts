@@ -7,7 +7,7 @@ import {
   type PerceptibleWorldEvent
 } from "@cortex/contracts";
 import { describe, expect, it } from "vitest";
-import { BoundedController, ScriptedControllerReasoner } from "../src/decision.js";
+import { BoundedController, FrameBuilder, ScriptedControllerReasoner } from "../src/decision.js";
 import { CommunicationModule, SkillExecutor, type SkillDefinition } from "../src/execution.js";
 import { FakeWorld } from "../src/fake-world.js";
 import { CortexKernel } from "../src/kernel.js";
@@ -235,7 +235,12 @@ describe("Marcus/Elena grounded vertical slice", () => {
           "report-marcus",
           "pretend-to-accept"
         ]);
-        expect(frame.relevantMemories[0]?.summary).toContain("threatened");
+        const memorySection = frame.sections.find(
+          (section) => section.id === "cortex-memory:relevant"
+        );
+        expect(
+          (memorySection?.value as { summary: string }[] | undefined)?.[0]?.summary
+        ).toContain("threatened");
         return {
           intentionId: "pretend-to-accept",
           target: marcusRef,
@@ -243,7 +248,22 @@ describe("Marcus/Elena grounded vertical slice", () => {
           commitment: 0.9,
           reasonCode: "protect-council"
         };
-      })
+      }),
+      new FrameBuilder([
+        {
+          id: "cortex-memory:relevant",
+          ownerPackId: "cortex:memory",
+          schemaVersion: 1,
+          maxBytes: 4096,
+          maxItems: 8,
+          readsSlices: [],
+          validate: (value) => Array.isArray(value),
+          contribute: (state) =>
+            [...state.memories]
+              .sort((left, right) => right.importance - left.importance)
+              .slice(0, 8)
+        }
+      ])
     );
     const result = await controller.decide({
       agentId: elena,
