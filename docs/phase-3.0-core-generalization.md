@@ -440,6 +440,9 @@ buildable and preserve deterministic tests.
 - introduce manifest and pack fingerprints; and
 - add compile-time and runtime tests that prohibit unregistered references.
 
+The schema-v1 ownership baseline is maintained in
+[phase-3.0-contract-inventory.md](phase-3.0-contract-inventory.md).
+
 ### Slice B — Entity, constraint, and effect generalization
 
 - add namespaced entity types;

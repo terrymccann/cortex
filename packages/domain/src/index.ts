@@ -1,5 +1,13 @@
+import { createHash } from "node:crypto";
+
 export type NamespacedId = `${string}:${string}`;
 export type JsonSchema = Readonly<Record<string, unknown>>;
+
+export const CORTEX_DOMAIN_MANIFEST_SCHEMA_V1 = "cortex-domain-manifest-v1" as const;
+export const CORTEX_DOMAIN_MANIFEST_TARGET_SCHEMA_V2 = "cortex-domain-manifest-v2" as const;
+export const CORTEX_DOMAIN_MANIFEST_CURRENT_SCHEMA = CORTEX_DOMAIN_MANIFEST_SCHEMA_V1;
+
+export type Sha256Fingerprint = `sha256:${string}`;
 
 export interface VersionedDefinition {
   readonly id: NamespacedId;
@@ -66,6 +74,15 @@ export interface GameDomain {
   readonly tags: readonly SemanticTag[];
 }
 
+export const fingerprintManifest = (value: unknown): Sha256Fingerprint =>
+  `sha256:${createHash("sha256").update(canonicalJson(value)).digest("hex")}`;
+
+export const fingerprintGameDomain = (domain: GameDomain): Sha256Fingerprint =>
+  fingerprintManifest({
+    schemaVersion: CORTEX_DOMAIN_MANIFEST_SCHEMA_V1,
+    domain
+  });
+
 export type DomainDefinition =
   | ActionDefinition
   | EntityTypeDefinition
@@ -90,6 +107,7 @@ export const isNamespacedId = (value: string): value is NamespacedId =>
 export class DomainRegistry {
   readonly #domains = new Map<NamespacedId, GameDomain>();
   readonly #definitions = new Map<NamespacedId, DomainDefinition>();
+  readonly #fingerprints = new Map<NamespacedId, Sha256Fingerprint>();
 
   register(domain: GameDomain): void {
     this.validateDomain(domain);
@@ -105,9 +123,14 @@ export class DomainRegistry {
     }
 
     this.#domains.set(domain.id, structuredClone(domain));
+    this.#fingerprints.set(domain.id, fingerprintGameDomain(domain));
     for (const definition of definitions) {
       this.#definitions.set(definition.id, structuredClone(definition));
     }
+  }
+
+  fingerprint(id: NamespacedId): Sha256Fingerprint | undefined {
+    return this.#fingerprints.get(id);
   }
 
   domain(id: NamespacedId): Readonly<GameDomain> | undefined {
@@ -154,15 +177,16 @@ export class DomainRegistry {
 
     const entityIds = new Set(domain.entities.map((entity) => entity.id));
     const motivationIds = new Set(domain.motivations.map((motivation) => motivation.id));
+    const tagIds = new Set(domain.tags.map((tag) => tag.id));
     for (const action of domain.actions) {
-      this.assertId(action.category, `action category for ${action.id}`);
+      this.assertRegisteredTag(action.category, tagIds, `action category for ${action.id}`);
       this.assertId(action.skillId, `skill for ${action.id}`);
       for (const reference of [
         ...action.risks,
         ...action.requirements,
         ...action.potentialEffects
       ]) {
-        this.assertId(reference, `semantic reference for ${action.id}`);
+        this.assertRegisteredTag(reference, tagIds, `semantic reference for ${action.id}`);
       }
       for (const targetType of action.targetTypes) {
         if (!entityIds.has(targetType)) {
@@ -185,12 +209,12 @@ export class DomainRegistry {
 
     for (const entity of domain.entities) {
       for (const property of entity.semanticProperties) {
-        this.assertId(property, `semantic property for ${entity.id}`);
+        this.assertRegisteredTag(property, tagIds, `semantic property for ${entity.id}`);
       }
     }
     for (const perception of domain.perceptions) {
       for (const property of perception.semanticProperties) {
-        this.assertId(property, `semantic property for ${perception.id}`);
+        this.assertRegisteredTag(property, tagIds, `semantic property for ${perception.id}`);
       }
     }
     for (const relationship of domain.relationshipDimensions) {
@@ -226,4 +250,35 @@ export class DomainRegistry {
       throw new DomainValidationError(`Invalid namespaced ${label} id: ${value}`);
     }
   }
+
+  private assertRegisteredTag(
+    value: NamespacedId,
+    tagIds: ReadonlySet<NamespacedId>,
+    label: string
+  ): void {
+    this.assertId(value, label);
+    if (!tagIds.has(value)) throw new DomainValidationError(`Unknown ${label}: ${value}`);
+  }
 }
+
+const canonicalJson = (value: unknown): string => {
+  if (value === null || typeof value === "boolean" || typeof value === "string") {
+    return JSON.stringify(value);
+  }
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) throw new Error("Cannot fingerprint a non-finite number");
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) return `[${value.map((item) => canonicalJson(item ?? null)).join(",")}]`;
+  if (isRecord(value)) {
+    return `{${Object.keys(value)
+      .filter((key) => value[key] !== undefined)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`)
+      .join(",")}}`;
+  }
+  throw new Error(`Cannot fingerprint unsupported value: ${typeof value}`);
+};
+
+const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);

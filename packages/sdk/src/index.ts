@@ -1,4 +1,11 @@
-import { isNamespacedId, type GameDomain, type NamespacedId } from "@cortex/domain";
+import {
+  fingerprintGameDomain,
+  fingerprintManifest,
+  isNamespacedId,
+  type GameDomain,
+  type NamespacedId,
+  type Sha256Fingerprint
+} from "@cortex/domain";
 import type {
   CognitiveFrameContributor,
   FallbackPolicy,
@@ -6,6 +13,9 @@ import type {
 } from "@cortex/runtime";
 
 export const CORTEX_SDK_VERSION = "0.1.0";
+export const CORTEX_PACK_MANIFEST_SCHEMA_V1 = "cortex-pack-manifest-v1" as const;
+export const CORTEX_PACK_MANIFEST_TARGET_SCHEMA_V2 = "cortex-pack-manifest-v2" as const;
+export const CORTEX_PACK_MANIFEST_CURRENT_SCHEMA = CORTEX_PACK_MANIFEST_SCHEMA_V1;
 
 export interface PackDependency {
   readonly packId: NamespacedId;
@@ -30,6 +40,30 @@ export interface CortexPack {
   readonly fallbackPolicy?: FallbackPolicy;
 }
 
+export const fingerprintPackCompatibility = (pack: CortexPack): Sha256Fingerprint =>
+  fingerprintManifest({
+    schemaVersion: CORTEX_PACK_MANIFEST_SCHEMA_V1,
+    id: pack.id,
+    version: pack.version,
+    cortexSdkRange: pack.cortexSdkRange,
+    dependencies: [...pack.dependencies].sort((left, right) =>
+      left.packId.localeCompare(right.packId)
+    ),
+    domains: [...(pack.domains ?? [])]
+      .map((domain) => ({ id: domain.id, fingerprint: fingerprintGameDomain(domain) }))
+      .sort((left, right) => left.id.localeCompare(right.id)),
+    stateSlices: pack.stateSlices
+      .map((slice) => ({ sliceId: slice.sliceId, module: slice.module }))
+      .sort((left, right) => left.sliceId.localeCompare(right.sliceId)),
+    modules: pack.modules
+      .map((module) => ({ ...module }))
+      .sort((left, right) => left.id.localeCompare(right.id)),
+    frameContributors: pack.frameContributors
+      .map((contributor) => contributor.id)
+      .sort((left, right) => left.localeCompare(right)),
+    hasFallbackPolicy: pack.fallbackPolicy !== undefined
+  });
+
 export class PackValidationError extends Error {
   constructor(message: string) {
     super(message);
@@ -42,6 +76,7 @@ export class PackRegistry {
   readonly #sliceOwners = new Map<string, NamespacedId>();
   readonly #moduleOwners = new Map<string, NamespacedId>();
   readonly #frameOwners = new Map<string, NamespacedId>();
+  readonly #fingerprints = new Map<NamespacedId, Sha256Fingerprint>();
 
   register(pack: CortexPack): void {
     this.validateCompatibility(pack);
@@ -81,9 +116,14 @@ export class PackRegistry {
     }
 
     this.#packs.set(pack.id, pack);
+    this.#fingerprints.set(pack.id, fingerprintPackCompatibility(pack));
     for (const slice of pack.stateSlices) this.#sliceOwners.set(slice.sliceId, pack.id);
     for (const module of pack.modules) this.#moduleOwners.set(module.id, pack.id);
     for (const contributor of pack.frameContributors) this.#frameOwners.set(contributor.id, pack.id);
+  }
+
+  compatibilityFingerprint(id: NamespacedId): Sha256Fingerprint | undefined {
+    return this.#fingerprints.get(id);
   }
 
   pack(id: NamespacedId): CortexPack | undefined {

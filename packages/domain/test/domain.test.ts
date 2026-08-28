@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { DomainRegistry, DomainValidationError, type GameDomain } from "../src/index.js";
+import {
+  CORTEX_DOMAIN_MANIFEST_SCHEMA_V1,
+  DomainRegistry,
+  DomainValidationError,
+  fingerprintGameDomain,
+  fingerprintManifest,
+  type GameDomain
+} from "../src/index.js";
 
 const droneDomain: GameDomain = {
   id: "drone:reconnaissance",
@@ -47,7 +54,13 @@ const droneDomain: GameDomain = {
   perceptions: [],
   resources: [],
   relationshipDimensions: [],
-  tags: []
+  tags: [
+    { id: "drone:mobile", version: 1, description: "Can change position" },
+    { id: "drone:movement", version: 1, description: "Movement action" },
+    { id: "drone:mission-delay", version: 1, description: "May delay the mission" },
+    { id: "drone:can-move", version: 1, description: "Requires movement capability" },
+    { id: "drone:survival", version: 1, description: "May preserve the unit" }
+  ]
 };
 
 describe("DomainRegistry", () => {
@@ -57,6 +70,7 @@ describe("DomainRegistry", () => {
 
     expect(registry.domain("drone:reconnaissance")?.version).toBe("1.0.0");
     expect(registry.action("drone:retreat")?.skillId).toBe("drone:retreat-skill");
+    expect(registry.fingerprint("drone:reconnaissance")).toBe(fingerprintGameDomain(droneDomain));
   });
 
   it("rejects action references to unknown entity types", () => {
@@ -75,5 +89,25 @@ describe("DomainRegistry", () => {
       "Invalid namespaced domain id"
     );
   });
-});
 
+  it("rejects semantic references that were not registered as tags", () => {
+    const registry = new DomainRegistry();
+    const invalid: GameDomain = {
+      ...droneDomain,
+      actions: [{ ...droneDomain.actions[0]!, risks: ["drone:unknown-risk"] }]
+    };
+
+    expect(() => registry.register(invalid)).toThrow("Unknown semantic reference");
+  });
+
+  it("fingerprints manifest content canonically and includes its schema", () => {
+    expect(fingerprintManifest({ b: 2, a: 1 })).toBe(fingerprintManifest({ a: 1, b: 2 }));
+    expect(fingerprintGameDomain(droneDomain)).toMatch(/^sha256:[a-f0-9]{64}$/);
+    expect(
+      fingerprintManifest({ schemaVersion: CORTEX_DOMAIN_MANIFEST_SCHEMA_V1, domain: droneDomain })
+    ).toBe(fingerprintGameDomain(droneDomain));
+    expect(fingerprintGameDomain({ ...droneDomain, version: "1.0.1" })).not.toBe(
+      fingerprintGameDomain(droneDomain)
+    );
+  });
+});

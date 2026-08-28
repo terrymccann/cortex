@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { CortexPack } from "../src/index.js";
-import { PackRegistry, PackValidationError } from "../src/index.js";
+import {
+  fingerprintPackCompatibility,
+  PackRegistry,
+  PackValidationError
+} from "../src/index.js";
 
 const createPack = (id: "test:first" | "test:second", sliceId: string): CortexPack => {
   const suffix = id === "test:first" ? "first" : "second";
@@ -49,6 +53,9 @@ describe("PackRegistry", () => {
     expect(registry.initialSlices()).toEqual({ "test:counter": { value: 0 } });
     expect(registry.stateSliceReducers()).toHaveLength(1);
     expect(registry.frameContributors()).toHaveLength(1);
+    expect(registry.compatibilityFingerprint("test:first")).toBe(
+      fingerprintPackCompatibility(createPack("test:first", "test:counter"))
+    );
   });
 
   it("rejects duplicate state-slice ownership", () => {
@@ -69,5 +76,15 @@ describe("PackRegistry", () => {
     };
 
     expect(() => registry.register(dependent)).toThrow("requires 2.0.0; installed 1.0.0");
+  });
+
+  it("fingerprints declared compatibility metadata without function serialization", () => {
+    const first = createPack("test:first", "test:counter");
+    const equivalent = createPack("test:first", "test:counter");
+    expect(fingerprintPackCompatibility(first)).toBe(fingerprintPackCompatibility(equivalent));
+    expect(fingerprintPackCompatibility({ ...first, version: "1.0.1" })).not.toBe(
+      fingerprintPackCompatibility(first)
+    );
+    expect(fingerprintPackCompatibility(first)).toMatch(/^sha256:[a-f0-9]{64}$/);
   });
 });
