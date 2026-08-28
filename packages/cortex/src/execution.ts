@@ -6,7 +6,7 @@ import {
   type ExpectedEffect,
   type FeasibleIntention,
   type SimTime,
-  type WorldAssumption
+  type WorldConstraint
 } from "@cortex/contracts";
 import type { PatchEnvelope } from "./patches.js";
 import type { CommittedDecision } from "./state.js";
@@ -63,7 +63,7 @@ export interface SkillDefinition {
   readonly intentionKind: string;
   readonly actionType: string;
   buildArguments(intention: FeasibleIntention, decision: CommittedDecision): Readonly<Record<string, unknown>>;
-  buildPreconditions(intention: FeasibleIntention): readonly WorldAssumption[];
+  buildPreconditions(intention: FeasibleIntention): readonly WorldConstraint[];
   buildExpectedEffects(intention: FeasibleIntention, now: SimTime): readonly ExpectedEffect[];
 }
 

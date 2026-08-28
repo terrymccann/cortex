@@ -2,24 +2,35 @@ import type {
   ActionCommand,
   ActionSubmission,
   AgentId,
-  AssumptionResult,
+  ConstraintValidationResult,
   CortexWorldPort,
   EntityRef,
   FeasibleIntention,
   FeasibleIntentionQuery,
+  NamespacedId,
   PerceptionSnapshot,
   ResolvedEntity,
-  WorldAssumption
+  WorldConstraint
 } from "@cortex/contracts";
+
+export interface ConstraintEvaluator {
+  readonly definitionId: NamespacedId;
+  readonly definitionVersion: number;
+  evaluate(
+    constraint: WorldConstraint,
+    resolveEntity: (ref: EntityRef) => ResolvedEntity | undefined
+  ): boolean;
+}
 
 export class FakeWorld implements CortexWorldPort {
   readonly #entities = new Map<string, ResolvedEntity>();
   readonly #intentions = new Map<AgentId, readonly FeasibleIntention[]>();
   readonly #allowedActionTypes = new Set<string>();
+  readonly #constraintEvaluators = new Map<string, ConstraintEvaluator>();
   readonly #submitted: ActionCommand[] = [];
 
   setEntity(entity: ResolvedEntity): void {
-    this.#entities.set(`${entity.ref.kind}:${entity.ref.id}`, entity);
+    this.#entities.set(`${entity.ref.type}:${entity.ref.id}`, entity);
   }
 
   setFeasibleIntentions(agentId: AgentId, intentions: readonly FeasibleIntention[]): void {
@@ -28,6 +39,14 @@ export class FakeWorld implements CortexWorldPort {
 
   allowActionType(actionType: string): void {
     this.#allowedActionTypes.add(actionType);
+  }
+
+  registerConstraintEvaluator(evaluator: ConstraintEvaluator): void {
+    const key = `${evaluator.definitionId}@${evaluator.definitionVersion}`;
+    if (this.#constraintEvaluators.has(key)) {
+      throw new Error(`Duplicate constraint evaluator: ${key}`);
+    }
+    this.#constraintEvaluators.set(key, evaluator);
   }
 
   submittedActions(): readonly ActionCommand[] {
@@ -43,23 +62,20 @@ export class FakeWorld implements CortexWorldPort {
   }
 
   async resolveEntity(ref: EntityRef): Promise<ResolvedEntity | undefined> {
-    return this.#entities.get(`${ref.kind}:${ref.id}`);
+    return this.#entities.get(`${ref.type}:${ref.id}`);
   }
 
-  async validateAssumptions(assumptions: readonly WorldAssumption[]): Promise<AssumptionResult> {
-    const failed: WorldAssumption[] = [];
-    for (const assumption of assumptions) {
-      if (!assumption.subject) continue;
-      const entity = await this.resolveEntity(assumption.subject);
-      const valid =
-        assumption.kind === "entity-exists"
-          ? entity?.exists === true
-          : assumption.kind === "entity-alive"
-            ? entity?.alive === true
-            : assumption.kind === "entity-accessible"
-              ? entity?.accessible === true
-              : true;
-      if (!valid) failed.push(assumption);
+  async validateConstraints(
+    constraints: readonly WorldConstraint[]
+  ): Promise<ConstraintValidationResult> {
+    const failed: WorldConstraint[] = [];
+    const resolve = (ref: EntityRef): ResolvedEntity | undefined =>
+      this.#entities.get(`${ref.type}:${ref.id}`);
+    for (const constraint of constraints) {
+      const evaluator = this.#constraintEvaluators.get(
+        `${constraint.definitionId}@${constraint.definitionVersion}`
+      );
+      if (!evaluator || !evaluator.evaluate(constraint, resolve)) failed.push(constraint);
     }
     return { valid: failed.length === 0, failed };
   }
@@ -68,8 +84,8 @@ export class FakeWorld implements CortexWorldPort {
     if (!this.#allowedActionTypes.has(command.actionType)) {
       return { status: "rejected", actionId: command.id, reason: "unknown-action-type" };
     }
-    const assumptions = await this.validateAssumptions(command.preconditions);
-    if (!assumptions.valid) {
+    const validation = await this.validateConstraints(command.preconditions);
+    if (!validation.valid) {
       return { status: "rejected", actionId: command.id, reason: "precondition-failed" };
     }
     this.#submitted.push(structuredClone(command));

@@ -1,7 +1,9 @@
 import {
   asMemoryId,
   type AgentId,
+  type ExpectedEffect,
   type EventId,
+  type NamespacedId,
   type PerceptibleWorldEvent,
   type SimTime
 } from "@cortex/contracts";
@@ -91,9 +93,24 @@ export class SocialAwarenessModule {
 }
 
 export class ActionAwarenessModule {
-  constructor(private readonly stateStore: AgentStateStore) {}
+  readonly #effectMatchers = new Map<string, EffectMatcher>();
 
-  async expect(agentId: AgentId, expectation: ActionExpectation, now: SimTime): Promise<PatchApplyResult> {
+  constructor(
+    private readonly stateStore: AgentStateStore,
+    effectMatchers: readonly EffectMatcher[] = []
+  ) {
+    for (const matcher of effectMatchers) {
+      const key = `${matcher.definitionId}@${matcher.definitionVersion}`;
+      if (this.#effectMatchers.has(key)) throw new Error(`Duplicate effect matcher: ${key}`);
+      this.#effectMatchers.set(key, matcher);
+    }
+  }
+
+  async expect(
+    agentId: AgentId,
+    expectation: ActionExpectation,
+    now: SimTime
+  ): Promise<PatchApplyResult> {
     const state = await this.stateStore.snapshot(agentId);
     return this.applyExpectations(agentId, state.version, [...state.expectations, expectation], now, []);
   }
@@ -103,15 +120,12 @@ export class ActionAwarenessModule {
     let changed = false;
     const expectations = state.expectations.map((expectation): ActionExpectation => {
       if (expectation.status !== "pending") return expectation;
-      const matched = expectation.expectedEffects.filter((effect) =>
-        observation.observedFacts.some(
-          (fact) =>
-            fact.subject.kind === effect.subject.kind &&
-            fact.subject.id === effect.subject.id &&
-            fact.predicate === effect.predicate &&
-            deepEqual(fact.object, effect.expected)
-        )
-      ).length;
+      const matched = expectation.expectedEffects.filter((effect) => {
+        const matcher = this.#effectMatchers.get(
+          `${effect.definitionId}@${effect.definitionVersion}`
+        );
+        return matcher?.matches(effect, observation) ?? false;
+      }).length;
       if (matched === 0) return expectation;
       changed = true;
       return {
@@ -169,6 +183,10 @@ export class ActionAwarenessModule {
   }
 }
 
+export interface EffectMatcher {
+  readonly definitionId: NamespacedId;
+  readonly definitionVersion: number;
+  matches(effect: ExpectedEffect, observation: PerceptibleWorldEvent): boolean;
+}
+
 const clamp01 = (value: number): number => Math.max(0, Math.min(1, value));
-const deepEqual = (left: unknown, right: unknown): boolean =>
-  JSON.stringify(left) === JSON.stringify(right);

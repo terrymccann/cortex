@@ -25,7 +25,7 @@ import { CortexKernel } from "../src/kernel.js";
 import { InMemoryAgentStateStore } from "../src/state-store.js";
 
 const elena = asAgentId("elena");
-const marcusRef = { kind: "agent" as const, id: asEntityId("marcus") };
+const marcusRef = { type: "cortex:agent" as const, id: asEntityId("marcus") };
 
 const configureIntentions = (world: FakeWorld): void => {
   world.setFeasibleIntentions(elena, [

@@ -7,6 +7,7 @@ export type CortexContractsSchemaVersion =
   | typeof CORTEX_CONTRACTS_TARGET_SCHEMA_V2;
 
 export type Brand<T, Name extends string> = T & { readonly __brand: Name };
+export type NamespacedId = `${string}:${string}`;
 
 export type AgentId = Brand<string, "AgentId">;
 export type EntityId = Brand<string, "EntityId">;
@@ -29,9 +30,26 @@ export const asJobId = (value: string): JobId => value as JobId;
 export const asSimTime = (value: number): SimTime => value as SimTime;
 
 export interface EntityRef {
+  readonly type: NamespacedId;
+  readonly id: EntityId;
+}
+
+export interface LegacyEntityRefV1 {
   readonly kind: "agent" | "location" | "organization" | "object";
   readonly id: EntityId;
 }
+
+export const LEGACY_ENTITY_TYPE_BY_KIND = {
+  agent: "cortex:agent",
+  location: "cortex:location",
+  organization: "cortex:organization",
+  object: "cortex:object"
+} as const satisfies Readonly<Record<LegacyEntityRefV1["kind"], NamespacedId>>;
+
+export const migrateLegacyEntityRefV1 = (ref: LegacyEntityRefV1): EntityRef => ({
+  type: LEGACY_ENTITY_TYPE_BY_KIND[ref.kind],
+  id: ref.id
+});
 
 export interface ObservedFact {
   readonly subject: EntityRef;
@@ -61,16 +79,18 @@ export interface PerceptibleWorldEvent<T = unknown> {
   readonly observedFacts: readonly ObservedFact[];
 }
 
-export interface WorldAssumption {
-  readonly kind: "entity-exists" | "entity-alive" | "entity-accessible" | "world-version";
+export interface WorldConstraint {
+  readonly definitionId: NamespacedId;
+  readonly definitionVersion: number;
   readonly subject?: EntityRef;
-  readonly expected?: unknown;
+  readonly parameters: Readonly<Record<string, unknown>>;
 }
 
 export interface ExpectedEffect {
+  readonly definitionId: NamespacedId;
+  readonly definitionVersion: number;
   readonly subject: EntityRef;
-  readonly predicate: string;
-  readonly expected: unknown;
+  readonly parameters: Readonly<Record<string, unknown>>;
   readonly deadline: SimTime;
 }
 
@@ -80,7 +100,7 @@ export interface ActionCommand {
   readonly decisionId: DecisionId;
   readonly actionType: string;
   readonly arguments: Readonly<Record<string, unknown>>;
-  readonly preconditions: readonly WorldAssumption[];
+  readonly preconditions: readonly WorldConstraint[];
   readonly expectedEffects: readonly ExpectedEffect[];
   readonly issuedAt: SimTime;
 }
@@ -124,15 +144,20 @@ export interface ResolvedEntity {
   readonly accessible?: boolean;
 }
 
-export interface AssumptionResult {
+export interface ConstraintValidationResult {
   readonly valid: boolean;
-  readonly failed: readonly WorldAssumption[];
+  readonly failed: readonly WorldConstraint[];
 }
+
+/** @deprecated Use ConstraintValidationResult. */
+export type AssumptionResult = ConstraintValidationResult;
 
 export interface CortexWorldPort {
   getPerception(agentId: AgentId): Promise<PerceptionSnapshot>;
   getFeasibleIntentions(query: FeasibleIntentionQuery): Promise<readonly FeasibleIntention[]>;
   resolveEntity(ref: EntityRef): Promise<ResolvedEntity | undefined>;
-  validateAssumptions(assumptions: readonly WorldAssumption[]): Promise<AssumptionResult>;
+  validateConstraints(
+    constraints: readonly WorldConstraint[]
+  ): Promise<ConstraintValidationResult>;
   submitAction(command: ActionCommand): Promise<ActionSubmission>;
 }

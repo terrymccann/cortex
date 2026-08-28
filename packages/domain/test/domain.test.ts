@@ -52,14 +52,31 @@ const droneDomain: GameDomain = {
     }
   ],
   perceptions: [],
+  constraints: [
+    {
+      id: "drone:can-move",
+      version: 1,
+      description: "The unit can move",
+      subjectTypes: ["drone:unit"],
+      parameterSchema: { type: "object", additionalProperties: false }
+    }
+  ],
+  effects: [
+    {
+      id: "drone:survival",
+      version: 1,
+      description: "The unit remains operational",
+      subjectTypes: ["drone:unit"],
+      parameterSchema: { type: "object" }
+    }
+  ],
   resources: [],
   relationshipDimensions: [],
   tags: [
     { id: "drone:mobile", version: 1, description: "Can change position" },
     { id: "drone:movement", version: 1, description: "Movement action" },
     { id: "drone:mission-delay", version: 1, description: "May delay the mission" },
-    { id: "drone:can-move", version: 1, description: "Requires movement capability" },
-    { id: "drone:survival", version: 1, description: "May preserve the unit" }
+    { id: "drone:survival-risk", version: 1, description: "Risk to unit survival" }
   ]
 };
 
@@ -98,6 +115,36 @@ describe("DomainRegistry", () => {
     };
 
     expect(() => registry.register(invalid)).toThrow("Unknown semantic reference");
+  });
+
+  it("rejects action references to unknown constraint definitions", () => {
+    const registry = new DomainRegistry();
+    const invalid: GameDomain = {
+      ...droneDomain,
+      actions: [{ ...droneDomain.actions[0]!, requirements: ["drone:unknown-constraint"] }]
+    };
+
+    expect(() => registry.register(invalid)).toThrow("Unknown constraint reference");
+  });
+
+  it("rejects action references to unknown effect definitions", () => {
+    const registry = new DomainRegistry();
+    const invalid: GameDomain = {
+      ...droneDomain,
+      actions: [{ ...droneDomain.actions[0]!, potentialEffects: ["drone:unknown-effect"] }]
+    };
+
+    expect(() => registry.register(invalid)).toThrow("Unknown effect reference");
+  });
+
+  it("rejects constraint subject types that are not registered entities", () => {
+    const registry = new DomainRegistry();
+    const invalid: GameDomain = {
+      ...droneDomain,
+      constraints: [{ ...droneDomain.constraints[0]!, subjectTypes: ["drone:unknown"] }]
+    };
+
+    expect(() => registry.register(invalid)).toThrow("Unknown subject type");
   });
 
   it("fingerprints manifest content canonically and includes its schema", () => {

@@ -24,7 +24,7 @@ describe("CortexKernel", () => {
       clarity: 1,
       observedFacts: [
         {
-          subject: { kind: "agent", id: asEntityId("marcus") },
+          subject: { type: "cortex:agent", id: asEntityId("marcus") },
           predicate: "invited_to_conspiracy",
           object: { invitee: "elena" },
           confidence: 1
@@ -36,7 +36,7 @@ describe("CortexKernel", () => {
         worldVersion: 1,
         simTime: asSimTime(10),
         type: "CONSPIRACY_INVITATION",
-        targets: [{ kind: "agent", id: asEntityId("elena") }],
+        targets: [{ type: "cortex:agent", id: asEntityId("elena") }],
         payload: {}
       }
     };
@@ -47,4 +47,3 @@ describe("CortexKernel", () => {
     expect((await store.snapshot(marcus)).perception).toHaveLength(0);
   });
 });
-

@@ -202,6 +202,10 @@ export interface ControllerReasoner {
   decide(frame: CognitiveFrame, signal: AbortSignal): Promise<ControllerOutput>;
 }
 
+export interface AcceptedDecisionReplayReasoner extends ControllerReasoner {
+  lastAcceptedRecord(frameId: string): AcceptedDecisionRecord | undefined;
+}
+
 export class ControllerReasonerError extends Error {
   constructor(
     message: string,
@@ -215,8 +219,12 @@ export class ControllerReasonerError extends Error {
   }
 }
 
-export const CORTEX_ACCEPTED_DECISION_RECORD_SCHEMA_VERSION =
+export const CORTEX_ACCEPTED_DECISION_RECORD_SCHEMA_V1 =
   "cortex-accepted-decision-record-v1" as const;
+export const CORTEX_ACCEPTED_DECISION_RECORD_SCHEMA_V2 =
+  "cortex-accepted-decision-record-v2" as const;
+export const CORTEX_ACCEPTED_DECISION_RECORD_SCHEMA_VERSION =
+  CORTEX_ACCEPTED_DECISION_RECORD_SCHEMA_V2;
 
 export interface AcceptedDecisionRecord {
   readonly schemaVersion: typeof CORTEX_ACCEPTED_DECISION_RECORD_SCHEMA_VERSION;
@@ -258,7 +266,7 @@ export class ReplayMismatchError extends ControllerReasonerError {
   }
 }
 
-export class ReplayControllerReasoner implements ControllerReasoner {
+export class ReplayControllerReasoner implements AcceptedDecisionReplayReasoner {
   #index = 0;
   #lastRecord: AcceptedDecisionRecord | undefined;
   readonly #records: readonly AcceptedDecisionRecord[];
@@ -569,10 +577,9 @@ export class BoundedController {
       }
     }
 
-    const replayRecord =
-      this.reasoner instanceof ReplayControllerReasoner
-        ? this.reasoner.lastAcceptedRecord(frame.frameId)
-        : undefined;
+    const replayRecord = isAcceptedDecisionReplayReasoner(this.reasoner)
+      ? this.reasoner.lastAcceptedRecord(frame.frameId)
+      : undefined;
     if (replayRecord !== undefined) {
       const enforcedObligationIds = dueObligations.map((obligation) => obligation.id);
       if (!sameStrings(replayRecord.enforcedObligationIds, enforcedObligationIds)) {
@@ -749,18 +756,21 @@ const abortable = async <T>(promise: Promise<T>, signal: AbortSignal): Promise<T
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
+const isAcceptedDecisionReplayReasoner = (
+  value: ControllerReasoner
+): value is AcceptedDecisionReplayReasoner =>
+  "lastAcceptedRecord" in value && typeof value.lastAcceptedRecord === "function";
+
 const isEntityRef = (value: unknown): value is EntityRef =>
   isRecord(value) &&
   Object.keys(value).length === 2 &&
-  (value["kind"] === "agent" ||
-    value["kind"] === "location" ||
-    value["kind"] === "organization" ||
-    value["kind"] === "object") &&
+  typeof value["type"] === "string" &&
+  /^[a-z][a-z0-9-]*:[a-z][a-z0-9-]*$/.test(value["type"]) &&
   typeof value["id"] === "string" &&
   value["id"].length > 0;
 
 const sameEntity = (left: EntityRef, right: EntityRef): boolean =>
-  left.kind === right.kind && left.id === right.id;
+  left.type === right.type && left.id === right.id;
 
 const sameStrings = (left: readonly string[], right: readonly string[]): boolean =>
   left.length === right.length && left.every((value, index) => value === right[index]);

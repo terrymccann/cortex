@@ -255,10 +255,10 @@ const createControllerOutputSchema = (frame: CognitiveFrame): Readonly<Record<st
             type: "object",
             additionalProperties: false,
             properties: {
-              kind: { type: "string", const: target.kind },
+              type: { type: "string", const: target.type },
               id: { type: "string", const: target.id }
             },
-            required: ["kind", "id"]
+            required: ["type", "id"]
           }))
         ]
       }
@@ -270,7 +270,7 @@ const createControllerOutputSchema = (frame: CognitiveFrame): Readonly<Record<st
 const uniqueTargets = (frame: CognitiveFrame): readonly EntityRef[] => {
   const targets = new Map<string, EntityRef>();
   for (const intention of frame.feasibleIntentions) {
-    for (const target of intention.allowedTargets) targets.set(`${target.kind}:${target.id}`, target);
+    for (const target of intention.allowedTargets) targets.set(`${target.type}:${target.id}`, target);
   }
   return [...targets.values()];
 };

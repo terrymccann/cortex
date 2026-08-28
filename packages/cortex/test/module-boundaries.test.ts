@@ -54,7 +54,7 @@ describe("cognitive module boundaries", () => {
       id: "reject",
       kind: "reject",
       description: "Reject the invitation",
-      allowedTargets: [{ kind: "agent", id: asEntityId("marcus") }],
+      allowedTargets: [{ type: "cortex:agent", id: asEntityId("marcus") }],
       constraints: []
     };
 

@@ -11,24 +11,50 @@ import { BoundedController, ScriptedControllerReasoner } from "../src/decision.j
 import { CommunicationModule, SkillExecutor, type SkillDefinition } from "../src/execution.js";
 import { FakeWorld } from "../src/fake-world.js";
 import { CortexKernel } from "../src/kernel.js";
-import { ActionAwarenessModule, MemoryModule, SocialAwarenessModule } from "../src/modules.js";
+import {
+  ActionAwarenessModule,
+  MemoryModule,
+  SocialAwarenessModule,
+  type EffectMatcher
+} from "../src/modules.js";
 import { InMemoryAgentStateStore } from "../src/state-store.js";
 
 const elena = asAgentId("elena");
 const marcus = asAgentId("marcus");
-const elenaRef = { kind: "agent" as const, id: asEntityId("elena") };
-const marcusRef = { kind: "agent" as const, id: asEntityId("marcus") };
+const elenaRef = { type: "cortex:agent" as const, id: asEntityId("elena") };
+const marcusRef = { type: "cortex:agent" as const, id: asEntityId("marcus") };
+
+const affirmativeResponseMatcher: EffectMatcher = {
+  definitionId: "social:affirmative-response-observed",
+  definitionVersion: 1,
+  matches: (effect, observation) =>
+    observation.observedFacts.some(
+      (fact) =>
+        fact.subject.type === effect.subject.type &&
+        fact.subject.id === effect.subject.id &&
+        fact.predicate === effect.parameters["predicate"] &&
+        fact.object === effect.parameters["expected"]
+    )
+};
 
 const responseSkill: SkillDefinition = {
   intentionKind: "pretend-to-accept",
   actionType: "RESPOND_TO_INVITATION",
   buildArguments: () => ({ response: "affirmative" }),
-  buildPreconditions: () => [{ kind: "entity-alive", subject: marcusRef }],
+  buildPreconditions: () => [
+    {
+      definitionId: "social:target-alive",
+      definitionVersion: 1,
+      subject: marcusRef,
+      parameters: {}
+    }
+  ],
   buildExpectedEffects: (_intention, now) => [
     {
       subject: marcusRef,
-      predicate: "received_affirmative_response",
-      expected: true,
+      definitionId: "social:affirmative-response-observed",
+      definitionVersion: 1,
+      parameters: { predicate: "received_affirmative_response", expected: true },
       deadline: asSimTime(Number(now) + 5)
     }
   ]
@@ -41,7 +67,7 @@ describe("Marcus/Elena grounded vertical slice", () => {
     const kernel = new CortexKernel(store);
     const memory = new MemoryModule(store);
     const social = new SocialAwarenessModule(store);
-    const awareness = new ActionAwarenessModule(store);
+    const awareness = new ActionAwarenessModule(store, [affirmativeResponseMatcher]);
 
     await kernel.registerAgent(
       {
@@ -84,6 +110,12 @@ describe("Marcus/Elena grounded vertical slice", () => {
     );
 
     world.setEntity({ ref: marcusRef, exists: true, alive: true, accessible: true });
+    world.registerConstraintEvaluator({
+      definitionId: "social:target-alive",
+      definitionVersion: 1,
+      evaluate: (constraint, resolve) =>
+        constraint.subject !== undefined && resolve(constraint.subject)?.alive === true
+    });
     world.allowActionType("RESPOND_TO_INVITATION");
     world.setFeasibleIntentions(elena, [
       {
@@ -312,8 +344,9 @@ describe("Marcus/Elena grounded vertical slice", () => {
         expectedEffects: [
           {
             subject: marcusRef,
-            predicate: "received_affirmative_response",
-            expected: true,
+            definitionId: "social:affirmative-response-observed",
+            definitionVersion: 1,
+            parameters: { predicate: "received_affirmative_response", expected: true },
             deadline: asSimTime(5)
           }
         ],

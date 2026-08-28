@@ -44,6 +44,16 @@ export interface PerceptionDefinition extends VersionedDefinition {
   readonly semanticProperties: readonly NamespacedId[];
 }
 
+export interface ConstraintDefinition extends VersionedDefinition {
+  readonly subjectTypes: readonly NamespacedId[];
+  readonly parameterSchema: JsonSchema;
+}
+
+export interface EffectDefinition extends VersionedDefinition {
+  readonly subjectTypes: readonly NamespacedId[];
+  readonly parameterSchema: JsonSchema;
+}
+
 export interface ResourceDefinition extends VersionedDefinition {
   readonly unit?: string;
   readonly scarce: boolean;
@@ -68,6 +78,8 @@ export interface GameDomain {
   readonly actions: readonly ActionDefinition[];
   readonly entities: readonly EntityTypeDefinition[];
   readonly perceptions: readonly PerceptionDefinition[];
+  readonly constraints: readonly ConstraintDefinition[];
+  readonly effects: readonly EffectDefinition[];
   readonly resources: readonly ResourceDefinition[];
   readonly relationshipDimensions: readonly RelationshipDimensionDefinition[];
   readonly motivations: readonly MotivationDefinition[];
@@ -87,6 +99,8 @@ export type DomainDefinition =
   | ActionDefinition
   | EntityTypeDefinition
   | PerceptionDefinition
+  | ConstraintDefinition
+  | EffectDefinition
   | ResourceDefinition
   | RelationshipDimensionDefinition
   | MotivationDefinition
@@ -178,15 +192,23 @@ export class DomainRegistry {
     const entityIds = new Set(domain.entities.map((entity) => entity.id));
     const motivationIds = new Set(domain.motivations.map((motivation) => motivation.id));
     const tagIds = new Set(domain.tags.map((tag) => tag.id));
+    const constraintIds = new Set(domain.constraints.map((constraint) => constraint.id));
+    const effectIds = new Set(domain.effects.map((effect) => effect.id));
     for (const action of domain.actions) {
       this.assertRegisteredTag(action.category, tagIds, `action category for ${action.id}`);
       this.assertId(action.skillId, `skill for ${action.id}`);
-      for (const reference of [
-        ...action.risks,
-        ...action.requirements,
-        ...action.potentialEffects
-      ]) {
+      for (const reference of action.risks) {
         this.assertRegisteredTag(reference, tagIds, `semantic reference for ${action.id}`);
+      }
+      for (const requirement of action.requirements) {
+        this.assertRegisteredDefinition(
+          requirement,
+          constraintIds,
+          `constraint reference for ${action.id}`
+        );
+      }
+      for (const effect of action.potentialEffects) {
+        this.assertRegisteredDefinition(effect, effectIds, `effect reference for ${action.id}`);
       }
       for (const targetType of action.targetTypes) {
         if (!entityIds.has(targetType)) {
@@ -217,6 +239,15 @@ export class DomainRegistry {
         this.assertRegisteredTag(property, tagIds, `semantic property for ${perception.id}`);
       }
     }
+    for (const definition of [...domain.constraints, ...domain.effects]) {
+      for (const subjectType of definition.subjectTypes) {
+        if (!entityIds.has(subjectType)) {
+          throw new DomainValidationError(
+            `Unknown subject type ${subjectType} in definition ${definition.id}`
+          );
+        }
+      }
+    }
     for (const relationship of domain.relationshipDimensions) {
       if (
         relationship.minimum >= relationship.maximum ||
@@ -238,6 +269,8 @@ export class DomainRegistry {
       ...domain.actions,
       ...domain.entities,
       ...domain.perceptions,
+      ...domain.constraints,
+      ...domain.effects,
       ...domain.resources,
       ...domain.relationshipDimensions,
       ...domain.motivations,
@@ -258,6 +291,15 @@ export class DomainRegistry {
   ): void {
     this.assertId(value, label);
     if (!tagIds.has(value)) throw new DomainValidationError(`Unknown ${label}: ${value}`);
+  }
+
+  private assertRegisteredDefinition(
+    value: NamespacedId,
+    definitionIds: ReadonlySet<NamespacedId>,
+    label: string
+  ): void {
+    this.assertId(value, label);
+    if (!definitionIds.has(value)) throw new DomainValidationError(`Unknown ${label}: ${value}`);
   }
 }
 
