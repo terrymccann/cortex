@@ -1,6 +1,6 @@
 # Phase 3.3: Living Story Session Runtime
 
-Status: in progress; Slice B implementation complete and authenticated acceptance pending
+Status: in progress; Slices A and B complete, Slice C next
 Scope: sustained autonomous story sessions, lifecycle control, soak evaluation,
 reader/operator workbench, and basic scenario authoring  
 Depends on:
@@ -508,6 +508,12 @@ replay.
 
 Slice B is complete when deterministic and live cohorts expose actionable
 session-level metrics and replay accepted sessions with zero model calls.
+
+Accepted 2026-08-29. The authenticated three-trial cohort achieved 100%
+authority, defensibility, and replay, zero deadlocks, three distinct
+trajectories, a 33.33% dominant-trajectory rate, and 96.88% minimum fallback
+health. Its frozen fingerprint is
+`sha256:aaca7b80b2d7e020558d2169fb7cf25bcd6300ffcfca3e371d2e7bd2712c5217`.
 
 ### Slice C — Story Workbench
 
