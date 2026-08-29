@@ -9,9 +9,9 @@ delivery progress rather than token, API, or model usage.
 
 **Current milestone:** Phase 3.3 — Living Story Session Runtime
 
-**Status:** In progress; Slice A headless autonomous session loop complete
+**Status:** In progress; Slice B implementation and offline soak gate complete, authenticated acceptance pending
 
-**Next step:** Implement Slice B session soak evaluation and replay hardening in the separate `cortex-living-story` repository
+**Next step:** Run and review the authenticated Phase 3.3 session smoke test and three-trial acceptance cohort
 
 ## Milestones
 
@@ -23,7 +23,7 @@ delivery progress rather than token, API, or model usage.
 | Phase 3.0 — Core Generalization | Complete | Scenario-agnostic public contracts, composable state and frames, standard packs, and cross-domain conformance |
 | Phase 3.1 — Bounded Emergent Autonomy | Complete | Goal formation, capability planning, outcome-driven coordination, replay, inspection, and accepted behavioral baseline |
 | Phase 3.2 — Living Story Runtime | Complete | Text-first ensemble simulation, Cortex character trajectories, story threads, grounded prose, reader modes, exact replay, behavioral evaluation, and an accepted live baseline |
-| Phase 3.3 — Living Story Session Runtime | In progress | Headless autonomous session loop accepted; soak evaluation, Story Workbench, and basic authoring workflow remain |
+| Phase 3.3 — Living Story Session Runtime | In progress | Headless session and offline soak/replay implementation accepted; authenticated Slice B gate, Story Workbench, and authoring workflow remain |
 
 ## Phase 3.2 delivery slices
 
@@ -40,7 +40,7 @@ delivery progress rather than token, API, or model usage.
 | Slice | Status | Scope |
 | --- | --- | --- |
 | A | Complete | Headless autonomous session lifecycle, activation, Cortex plan/action bridge, deterministic scheduling, progress recovery, budgets, checkpoint/resume, threads, scenes, and grounded prose |
-| B | Next | Session soak evaluation, deadlock and repetition diagnostics, checkpoint equivalence, branching, usage aggregation, and replay hardening |
+| B | In progress | Replay, checkpoint equivalence, branching, diagnostics, recorded/live cohorts, usage, injection canary, and offline soak accepted; authenticated baseline pending |
 | C | Pending | Local Story Workbench for prose, lifecycle controls, threads, inspection, usage, fallbacks, checkpoints, and replay |
 | D | Pending | Schema-backed basic authoring workflow and a second portable scenario with no product-source changes |
 
