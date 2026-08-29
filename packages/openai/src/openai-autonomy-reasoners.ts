@@ -13,7 +13,7 @@ import type {
 } from "./openai-controller-reasoner.js";
 
 export const OPENAI_GOAL_PROMPT_VERSION = "cortex-goal-reasoner-v4";
-export const OPENAI_PLANNER_PROMPT_VERSION = "cortex-planner-reasoner-v4";
+export const OPENAI_PLANNER_PROMPT_VERSION = "cortex-planner-reasoner-v5";
 
 export interface OpenAIGoalFormationFrame {
   readonly schemaVersion: "cortex-goal-formation-frame-v1";
@@ -55,6 +55,8 @@ export interface OpenAIPlanningFrame {
   readonly strategies: readonly StrategyTemplateDefinition[];
   readonly visibleEntities: readonly EntityRef[];
   readonly activeObligationIds: readonly string[];
+  readonly requiredSuccessConditionRefs?: readonly NamespacedId[];
+  readonly allowedFailureConditionRefs?: readonly NamespacedId[];
   readonly sections: readonly CognitiveFrameSection[];
   readonly limits: { readonly maxSteps: number };
 }
@@ -316,8 +318,14 @@ const planSchema = (frame: OpenAIPlanningFrame): Readonly<Record<string, unknown
         required: ["stepId", "capabilityId", "capabilityVersion", "parameters", "target", "dependsOn", "optional"]
       })) }
     },
-    successConditionRefs: { type: "array", minItems: 1, items: { type: "string" } },
-    failureConditionRefs: { type: "array", items: { type: "string" } },
+    successConditionRefs: frame.requiredSuccessConditionRefs === undefined
+      ? { type: "array", minItems: 1, items: { type: "string" } }
+      : { type: "array", minItems: frame.requiredSuccessConditionRefs.length, maxItems: frame.requiredSuccessConditionRefs.length, items: { type: "string", enum: frame.requiredSuccessConditionRefs } },
+    failureConditionRefs: frame.allowedFailureConditionRefs === undefined
+      ? { type: "array", items: { type: "string" } }
+      : frame.allowedFailureConditionRefs.length === 0
+        ? { type: "array", maxItems: 0, items: { type: "string" } }
+        : { type: "array", items: { type: "string", enum: frame.allowedFailureConditionRefs } },
     acknowledgedObligationIds: frame.activeObligationIds.length === 0
       ? { type: "array", maxItems: 0, items: { type: "string" } }
       : { type: "array", items: { type: "string", enum: frame.activeObligationIds } },
@@ -414,7 +422,18 @@ const normalizePlanProposal = (value: unknown, frame: OpenAIPlanningFrame): unkn
     })
     : value["steps"];
   const entries = Object.entries(value).filter(([key, item]) => !(key === "strategyId" && item === null));
-  return { ...Object.fromEntries(entries), steps: normalizedSteps };
+  const failureConditionRefs = frame.allowedFailureConditionRefs === undefined
+    ? value["failureConditionRefs"]
+    : Array.isArray(value["failureConditionRefs"])
+      ? value["failureConditionRefs"].filter((item) => frame.allowedFailureConditionRefs!.includes(item as NamespacedId))
+      : value["failureConditionRefs"];
+  return {
+    ...Object.fromEntries(entries),
+    steps: normalizedSteps,
+    ...(frame.requiredSuccessConditionRefs === undefined ? {} : { successConditionRefs: frame.requiredSuccessConditionRefs }),
+    ...(frame.allowedFailureConditionRefs === undefined ? {} : { failureConditionRefs }),
+    acknowledgedObligationIds: frame.activeObligationIds
+  };
 };
 
 const toOpenAIProviderSchema = (schema: Readonly<Record<string, unknown>>): Readonly<Record<string, unknown>> => {

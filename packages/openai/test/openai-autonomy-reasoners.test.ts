@@ -69,6 +69,7 @@ const planningFrame = (): PlanningFrame => ({
     planningCost: { effort: 0.2, risk: 0.1 }, incompatibleWith: []
   }],
   strategies: [], visibleEntities: [], activeObligationIds: [], sections: [],
+  requiredSuccessConditionRefs: ["test:safe"], allowedFailureConditionRefs: [],
   limits: { maxSteps: 3, maxDepth: 2, maxParallelSteps: 1 }
 });
 
@@ -106,7 +107,7 @@ describe("OpenAI autonomy reasoners", () => {
           goalId: "goal:preserve", strategyId: null,
           steps: [{ stepId: "withdraw", capabilityId: "test:withdraw", capabilityVersion: 1,
           parameters: { note: null }, target: null, dependsOn: [], optional: false }],
-          successConditionRefs: ["test:safe"], failureConditionRefs: [],
+          successConditionRefs: ["test:invented"], failureConditionRefs: ["test:invented"],
           acknowledgedObligationIds: [], reasonCode: "test:reduce-risk"
         });
       }

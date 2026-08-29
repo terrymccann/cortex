@@ -123,6 +123,8 @@ export interface PlanningFrame {
   readonly strategies: readonly StrategyTemplateDefinition[];
   readonly visibleEntities: readonly EntityRef[];
   readonly activeObligationIds: readonly string[];
+  readonly requiredSuccessConditionRefs?: readonly NamespacedId[];
+  readonly allowedFailureConditionRefs?: readonly NamespacedId[];
   readonly sections: readonly CognitiveFrameSection[];
   readonly limits: {
     readonly maxSteps: number;
@@ -760,6 +762,7 @@ export class PlanManager {
 
   private frame(state: Readonly<AgentState>, goal: Goal, capabilities: readonly CapabilityDefinition[], strategies: readonly StrategyTemplateDefinition[]): PlanningFrame {
     const visibleEntities = uniqueEntities(state.perception.flatMap((observation) => observation.facts.map((fact) => fact.subject)));
+    const definition = this.domains.goal(goal.definitionId)!;
     return {
       schemaVersion: "cortex-planning-frame-v1",
       frameId: `${state.id}:planning:${goal.id}:v${state.version}`,
@@ -772,6 +775,8 @@ export class PlanManager {
       strategies: structuredClone(strategies),
       visibleEntities,
       activeObligationIds: state.activeObligations.map((obligation) => obligation.id),
+      requiredSuccessConditionRefs: [definition.successCondition.definitionId],
+      allowedFailureConditionRefs: definition.failureConditions.map((condition) => condition.definitionId),
       sections: new FrameBuilder(this.options.frameContributors ?? []).build({
         state, situationId: `planning:${goal.id}`, situation: `Plan for active goal ${goal.definitionId}`, feasibleIntentions: []
       }).sections,
