@@ -1,6 +1,6 @@
 # Phase 3.2: Living Story Runtime
 
-Status: implementation in progress; Slices A and B complete
+Status: implementation in progress; Slices A through C complete
 Scope: authoritative textual worlds, bounded ensemble orchestration, dialogue,
 narrative rendering, designer authoring, inspection, evaluation, and replay  
 Depends on:
@@ -803,7 +803,7 @@ repository and must not appear in Cortex production source.
 - generate observer-specific perceptions; and
 - prove secrets, lies, presence, audibility, and possession remain grounded.
 
-### Slice C — Ensemble and scene orchestration
+### Slice C — Ensemble and scene orchestration (complete)
 
 - implement cognitive tiers and event-driven activation;
 - add bounded conversation turns and interruptions;
