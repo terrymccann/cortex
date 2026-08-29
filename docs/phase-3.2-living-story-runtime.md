@@ -78,10 +78,13 @@ At the end of Phase 3.2, a designer can:
 5. pause, resume, accelerate, and inspect the simulation;
 6. introduce a bounded director event without granting every character
    knowledge of it;
-7. read a coherent live narrative grounded in accepted story events;
-8. inspect why a character acted using structured causal records rather than
+7. follow several interwoven story threads that can diverge, return, merge, and
+   resolve without violating canonical chronology;
+8. read a coherent live narrative grounded in accepted story events;
+9. inspect why a character acted using structured causal records rather than
    hidden chain-of-thought; and
-9. replay the complete accepted story trajectory with zero model calls.
+10. replay the complete accepted story and presentation trajectory with zero
+    model calls.
 
 ## 5. Non-goals
 
@@ -298,12 +301,153 @@ The scene scheduler may open, continue, suspend, resume, or close a scene using
 deterministic policy. A model may recommend emphasis but may not fabricate a
 scene outcome.
 
-## 15. Narrative Director
+## 15. Story Thread Manager
+
+A story thread is a runtime grouping of accepted events, characters, locations,
+goals, objects, and unresolved tensions. It helps the presentation layer follow
+several developing situations without turning them into designer-authored plot
+scripts.
+
+Conceptually:
+
+```ts
+interface StoryThread {
+  readonly id: StoryThreadId;
+  readonly status: "emerging" | "active" | "background" | "merged" | "resolved";
+  readonly characterIds: readonly AgentId[];
+  readonly locationIds: readonly EntityId[];
+  readonly sourceEventIds: readonly EventId[];
+  readonly unresolvedTensionIds: readonly NamespacedId[];
+  readonly relatedGoalIds: readonly GoalId[];
+  readonly parentThreadIds: readonly StoryThreadId[];
+  readonly narrativePriority: number;
+  readonly openedAt: SimTime;
+  readonly lastChangedAt: SimTime;
+  readonly lastPresentedAt?: SimTime;
+}
+```
+
+Threads emerge from canonical events and semantic associations. A designer may
+seed an opening tension, but does not pre-author a required sequence of thread
+events or resolution.
+
+The deterministic Thread Manager owns:
+
+- opening a thread when accepted events establish a material unresolved
+  situation;
+- attaching later events using explicit characters, locations, goals, objects,
+  causal references, and tension tags;
+- moving inactive threads between foreground and background status;
+- merging threads when their causal situations converge;
+- resolving a thread only from accepted resolution evidence;
+- preventing one thread from monopolizing presentation; and
+- producing safe, scored transition candidates for the Narrative Director.
+
+Thread membership is presentation metadata. It does not change the meaning,
+ordering, visibility, or authority of its source events.
+
+### 15.1 Safe transition points
+
+The Thread Manager may offer a transition only at a causally safe boundary,
+including:
+
+- an action outcome;
+- a completed bounded dialogue exchange;
+- an accepted discovery or material information change;
+- a consequential decision whose immediate commit is complete;
+- a scene pause, suspension, closure, or interruption; or
+- an urgent accepted event in another thread.
+
+It must not offer a transition:
+
+- during an indivisible action or utterance;
+- before a required response policy is satisfied or explicitly deferred;
+- across an unresolved causal dependency;
+- to a viewpoint that cannot observe the proposed narrative beat;
+- before the current thread's minimum dwell budget; or
+- when the destination thread has no new renderable event.
+
+### 15.2 Transition candidates and selection
+
+A transition candidate contains only accepted, permitted information:
+
+```ts
+interface ThreadTransitionCandidate {
+  readonly threadId: StoryThreadId;
+  readonly sourceEventIds: readonly EventId[];
+  readonly permittedViewpointIds: readonly AgentId[];
+  readonly urgency: number;
+  readonly tension: number;
+  readonly informationChange: number;
+  readonly convergencePotential: number;
+  readonly timeSincePresented: number;
+  readonly continuityCost: number;
+  readonly spoilerRisk: number;
+}
+```
+
+The deterministic fallback score is conceptually:
+
+```text
+urgency
++ tension
++ information change
++ convergence potential
++ time since presented
+- continuity cost
+- spoiler risk
+- recent repetition
+```
+
+Designer pacing policy supplies bounded weights and minimum or maximum dwell
+limits. It may create profiles such as balanced ensemble, single protagonist,
+thriller, slow burn, mystery, or chronological chronicle. It cannot alter
+character goals, action outcomes, knowledge, or canonical event order.
+
+An optional Director reasoner may select from the eligible candidates and
+choose a registered transition style such as continue, intercut, return,
+viewpoint-shift, summarize, or close. The validator rejects any unoffered
+thread, event, viewpoint, or transition style.
+
+### 15.3 Starvation, cliffhangers, merging, and resolution
+
+The Thread Manager enforces:
+
+- a maximum interval before an active unresolved thread is reconsidered;
+- a maximum number of unresolved cutaways before a promised return;
+- no repeated cut immediately before the same deferred payoff;
+- a cap on concurrent foreground threads;
+- deterministic background summarization after inactivity;
+- explicit causal evidence for thread merging; and
+- explicit accepted evidence before resolution.
+
+A cliffhanger is a presentation disposition, not a world-state transition. It
+cannot delay an urgent character action or preserve a situation that the
+simulation has already resolved.
+
+### 15.4 Accepted presentation record
+
+Every thread selection produces a versioned record containing:
+
+- current and selected thread IDs;
+- all eligible candidate thread IDs;
+- selected source event IDs and viewpoint;
+- deterministic score components;
+- pacing-policy and schema versions;
+- transition style and bounded reason code;
+- whether selection came from a reasoner or fallback; and
+- resulting scene and presentation sequence numbers.
+
+Replay consumes the accepted record and performs no Director model call.
+
+## 16. Narrative Director
 
 The Narrative Director decides what the reader sees, not what becomes true.
 
 It may:
 
+- select only from safe thread-transition candidates offered by the Thread
+  Manager;
 - select a viewpoint allowed by reader mode;
 - choose accepted events for foreground narration;
 - group causally adjacent events into a narrative beat;
@@ -318,13 +462,15 @@ It may not:
 - make a character choose an action;
 - mark a goal, plan, action, or obligation successful;
 - expose facts unavailable to the selected viewpoint;
+- select an unoffered thread, source event, viewpoint, or transition style;
 - reorder events across a causal dependency; or
 - introduce an unregistered event.
 
 Director output is strict, bounded, versioned, auditable, and optional. A
-deterministic fallback can render the accepted event stream without a model.
+deterministic fallback selects the highest eligible thread score and can render
+the accepted event stream without a model.
 
-## 16. Narrative renderer
+## 17. Narrative renderer
 
 The renderer receives a bounded narrative beat containing source event IDs,
 viewpoint permissions, character presentation profiles, and accepted speech.
@@ -339,7 +485,7 @@ If prose validation fails, the system renders a deterministic event summary.
 The canonical transcript always retains source event links so a reader can
 distinguish simulation history from presentation.
 
-## 17. Designer authoring contract
+## 18. Designer authoring contract
 
 The MVP authoring format should provide versioned files for:
 
@@ -350,22 +496,26 @@ The MVP authoring format should provide versioned files for:
 - locations, passages, objects, and access rules;
 - domain and pack configuration;
 - allowed director interventions;
-- pacing, cognition, and content budgets; and
+- pacing profiles, thread limits, cognition, and content budgets; and
 - evaluation fixtures and expected invariants.
 
 The toolchain must validate references, namespaces, schema versions, duplicate
 ownership, impossible locations, inaccessible required objects, missing skills,
 invalid secrets, and incompatible packs before a run starts.
 
-Author files provide conditions and behavioral envelopes. They do not contain a
-hidden required plot or leak evaluation answers into character frames.
+Author files provide conditions, opening tensions, and behavioral envelopes.
+They do not contain a hidden required plot, prescribe thread resolutions, or
+leak evaluation answers into character frames.
 
-## 18. Reader modes
+## 19. Reader modes
 
 The reference application supports:
 
+- **novel:** let the Director interleave all materially active threads;
 - **observer:** read the selected narrative without controlling a character;
 - **viewpoint:** follow one character and see only permitted information;
+- **thread:** remain with one selected storyline while it has renderable events;
+- **chronicle:** read accepted events primarily in canonical time order;
 - **director:** introduce one of the scenario's registered external events;
 - **character:** optionally control one character while Cortex runs the rest;
   and
@@ -375,7 +525,7 @@ Director input is treated as an external event proposal. It is validated,
 recorded, and projected separately to each observer. A natural-language reader
 message cannot directly mutate canonical state.
 
-## 19. Time, pacing, and cost
+## 20. Time, pacing, and cost
 
 Simulation time is authoritative and independent of wall-clock latency. The
 reader may pause, resume, or select supported speed tiers.
@@ -383,6 +533,9 @@ reader may pause, resume, or select supported speed tiers.
 The host enforces budgets for:
 
 - active scenes;
+- active and foreground story threads;
+- minimum dwell and maximum thread-absence intervals;
+- unresolved cutaways;
 - foreground characters;
 - dialogue turns;
 - goal and planning reconsiderations;
@@ -399,7 +552,7 @@ Budget exhaustion produces an observable deterministic disposition such as
 waiting, summarizing, deferring, or closing the scene. It never grants the
 narrator or a character additional authority.
 
-## 20. Persistence, replay, and branching
+## 21. Persistence, replay, and branching
 
 The MVP may remain local and file-backed, but it records:
 
@@ -408,19 +561,21 @@ The MVP may remain local and file-backed, but it records:
 - observer projections;
 - accepted goals, plans, decisions, actions, outcomes, and utterances;
 - scene and Director records;
+- thread lifecycle, transition-candidate, and accepted presentation records;
 - narrative beats and source event IDs;
 - provider metadata and usage; and
 - final state hashes.
 
 Replay performs zero model calls and reproduces canonical state, accepted
-character trajectories, scene ordering, narrative-source selections, and final
-hashes. Exact prose reproduction requires recorded renderer output; canonical
-replay does not depend on regenerating prose.
+character trajectories, thread lifecycle and merging, scene ordering, accepted
+thread transitions, narrative-source selections, and final hashes. Exact prose
+reproduction requires recorded renderer output; canonical replay does not
+depend on regenerating prose.
 
 Branching creates a new run with an explicit parent checkpoint and new external
 event. It never edits the parent history in place.
 
-## 21. Inspector
+## 22. Inspector
 
 The inspector presents a causal timeline:
 
@@ -434,6 +589,7 @@ world event
   -> immediate decision
   -> action or utterance
   -> authoritative outcome
+  -> thread lifecycle or transition
   -> narrative beat
 ```
 
@@ -442,7 +598,7 @@ active relationships, obligations, policy constraints, alternatives offered,
 provider usage, and validation outcomes. It does not store or display hidden
 chain-of-thought.
 
-## 22. Security and trust boundaries
+## 23. Security and trust boundaries
 
 Character biographies, memories, utterances, object text, scenario prose,
 reader input, and generated narration are untrusted data.
@@ -457,7 +613,7 @@ Tests must demonstrate that embedded instructions cannot:
 - cause a replay to call a model; or
 - convert narrative prose into canonical history.
 
-## 23. Reference scenario
+## 24. Reference scenario
 
 The initial proof should use one contained setting with:
 
@@ -470,18 +626,20 @@ The initial proof should use one contained setting with:
 - at least one lie or misleading utterance;
 - at least one interrupted or rejected action;
 - at least one off-screen event with selective observation; and
+- at least three threads that interleave, with two later merging; and
 - multiple defensible story trajectories.
 
 An isolated manor, stranded spacecraft, diplomatic residence, lifeboat, or
 frontier outpost is suitable. The setting is chosen in the living-story
 repository and must not appear in Cortex production source.
 
-## 24. Delivery slices
+## 25. Delivery slices
 
 ### Slice A — Story host and authoring contracts
 
 - create the separate living-story repository;
-- define scenario, character, location, object, knowledge, and policy schemas;
+- define scenario, character, location, object, knowledge, thread, pacing, and
+  policy schemas;
 - implement authoring validation and deterministic story state; and
 - add an offline reference scenario fixture.
 
@@ -496,27 +654,31 @@ repository and must not appear in Cortex production source.
 
 - implement cognitive tiers and event-driven activation;
 - add bounded conversation turns and interruptions;
-- serialize conflicting actions and stale proposals; and
-- record deterministic scene lifecycle events.
+- serialize conflicting actions and stale proposals;
+- implement thread emergence, association, starvation, merging, and resolution;
+- produce deterministic safe-transition candidates and fallback scores; and
+- record deterministic scene and thread lifecycle events.
 
 ### Slice D — Narrative Director, renderer, and reader
 
 - implement provider-neutral Director and renderer contracts;
+- validate Director selection against offered thread transitions and permitted
+  viewpoints;
 - add deterministic fallbacks;
-- build a local live reader with pause, speed, viewpoint, and inspection modes;
-  and
+- build a local live reader with pause, speed, novel, thread, viewpoint,
+  chronicle, and inspection modes; and
 - link every narrative beat to accepted source events.
 
 ### Slice E — Replay, evaluation, and product proof
 
 - replay a complete story with zero model calls;
-- add controlled ensemble, continuity, secret-leakage, pacing, diversity, and
-  cost evaluations;
+- add controlled ensemble, continuity, secret-leakage, thread interleaving,
+  starvation, pacing, diversity, and cost evaluations;
 - run a bounded live reference scenario;
 - freeze the first accepted Phase 3.2 baseline; and
 - document all public-contract gaps discovered by the clean-room integration.
 
-## 25. Required test matrix
+## 26. Required test matrix
 
 The automated suite includes:
 
@@ -528,11 +690,18 @@ The automated suite includes:
 - simultaneous conflicting actions and stale-result rejection;
 - dialogue interruption, turn limits, and monopolization prevention;
 - dormant and off-screen cognitive tiers;
+- three simultaneous threads with bounded foreground selection;
+- safe-cut gating during actions and dialogue;
+- starvation prevention and overdue-thread return;
+- bounded cliffhangers and prohibited repeated deferral;
+- causal thread merging and evidence-backed resolution;
+- pacing-profile changes that do not alter canonical history;
+- thread and chronicle reader modes with viewpoint secrecy;
 - scene call, token, turn, and duration exhaustion;
 - narrator attempts to add actions, facts, or outcomes;
 - reader prompt-injection and unauthorized director events;
 - deterministic rendering fallback;
-- exact canonical replay with zero model calls;
+- exact canonical and thread-presentation replay with zero model calls;
 - branch lineage and immutable parent history;
 - multi-character goal, plan, action, and outcome trajectories;
 - controlled scenario variants with multiple defensible developments; and
@@ -540,7 +709,7 @@ The automated suite includes:
 
 Live provider evaluations never run in the default unit suite.
 
-## 26. Acceptance criteria
+## 27. Acceptance criteria
 
 Phase 3.2 is complete only when:
 
@@ -553,26 +722,32 @@ Phase 3.2 is complete only when:
 5. At least one character lies or is mistaken without changing canonical truth.
 6. At least one promise or obligation constrains a later decision.
 7. Concurrent or interrupted actions produce deterministic, observable results.
-8. The Narrative Director and renderer cannot mutate state or invent a
+8. At least three active story threads interleave, no active unresolved thread
+   starves, and at least two threads merge from accepted causal evidence.
+9. Every thread switch occurs at a safe transition point and preserves canonical
+   event order and viewpoint secrecy.
+10. Different pacing profiles change presentation selection without changing
+    canonical world or character history.
+11. The Narrative Director and renderer cannot mutate state or invent a
    consequential accepted event.
-9. Every rendered narrative beat links to accepted source events and a permitted
+12. Every rendered narrative beat links to accepted source events and a permitted
    viewpoint.
-10. Pause, resume, speed, viewpoint, director, and inspection controls preserve
-    authority and replay semantics.
-11. Provider failure, timeout, invalid output, and budget exhaustion have
+13. Pause, resume, speed, novel, thread, viewpoint, chronicle, director, and
+    inspection controls preserve authority and replay semantics.
+14. Provider failure, timeout, invalid output, and budget exhaustion have
     deterministic fallbacks.
-12. Injection attempts do not leak secrets, change policies, register
+15. Injection attempts do not leak secrets, change policies, register
     vocabulary, or create canonical facts.
-13. A complete accepted story replays with identical canonical events,
-    character trajectories, scene order, and final state hash using zero model
-    calls.
-14. Behavioral evaluation reports continuity, causal grounding, secret
-    containment, ensemble participation, diversity, repetition, safety,
-    latency, tokens, and cost.
-15. The first live Phase 3.2 quality baseline is reviewed and frozen without
+16. A complete accepted story replays with identical canonical events,
+    character trajectories, thread lifecycle and selection sequence, scene
+    order, and final state hash using zero model calls.
+17. Behavioral evaluation reports continuity, causal grounding, secret
+    containment, ensemble and thread participation, starvation, diversity,
+    repetition, safety, latency, tokens, and cost.
+18. The first live Phase 3.2 quality baseline is reviewed and frozen without
     treating every non-preferred but defensible story development as failure.
 
-## 27. Stop conditions
+## 28. Stop conditions
 
 Phase 3.2 stops when the acceptance criteria pass and the initial living-story
 baseline is frozen.
@@ -587,11 +762,12 @@ The phase does not continue merely because:
 - visual, voice, hosted, or marketplace features remain desirable.
 
 Work continues only for a demonstrated authority breach, secret leak,
-continuity defect, unbounded loop, invalid action, replay mismatch, unsafe
-output, material ensemble collapse, unusable authoring contract, or failure of
-the clean-room product boundary.
+continuity defect, thread starvation, unsafe or causally invalid transition,
+unbounded loop, invalid action, replay mismatch, unsafe output, material
+ensemble collapse, unusable authoring contract, or failure of the clean-room
+product boundary.
 
-## 28. Exit artifacts
+## 29. Exit artifacts
 
 Phase 3.2 produces:
 
@@ -599,7 +775,8 @@ Phase 3.2 produces:
 - versioned story scenario and authoring schemas;
 - a bounded story-domain pack;
 - authoritative action, speech, and observer-projection adapters;
-- ensemble and scene schedulers;
+- ensemble, scene, and Story Thread Managers;
+- safe-transition and accepted thread-presentation records;
 - provider-neutral Narrative Director and renderer interfaces;
 - deterministic Director and rendering fallbacks;
 - a local live reader and structured causal inspector;
