@@ -19,8 +19,10 @@ import type {
 } from "@cortex/runtime";
 import type { CortexPack } from "@cortex/sdk";
 import { goalsPack } from "./goals.js";
+import { planningPack } from "./planning.js";
 
 export * from "./goals.js";
+export * from "./planning.js";
 
 export const STANDARD_SLICE_IDS = {
   traits: "cortex-traits:state",
@@ -63,11 +65,6 @@ export interface Relationship {
   readonly familiarity: number;
 }
 
-export interface PlanState {
-  readonly id: string;
-  readonly status: "created" | "invalidated";
-}
-
 export interface CommunicationRecord {
   readonly decisionId: string;
   readonly speechAct: string;
@@ -90,21 +87,8 @@ export interface SocialState {
   readonly relationships: readonly Relationship[];
 }
 
-export interface PlanningState {
-  readonly activePlan?: PlanState;
-}
-
 export interface ConversationState {
   readonly lastCommunication?: CommunicationRecord;
-}
-
-export interface PlanningManagerPort {
-  update(
-    agentId: AgentId,
-    planId: string,
-    status: "created" | "invalidated",
-    now: SimTime
-  ): Promise<PatchApplyResult>;
 }
 
 export interface SocialRelationshipDelta {
@@ -150,20 +134,6 @@ const socialReducer = reducer<SocialState, { readonly deltas: readonly SocialRel
   reduce: (current, operation) => ({
     relationships: updateRelationships(current.relationships, operation.deltas)
   })
-});
-
-const planningReducer = reducer<
-  PlanningState,
-  { readonly planId: string; readonly status: "created" | "invalidated" }
->({
-  sliceId: STANDARD_SLICE_IDS.planning,
-  writerModules: ["cortex-planning:manager"],
-  initial: {},
-  validate: isPlanningState,
-  reduce: (_current, operation) =>
-    operation.status === "created"
-      ? { activePlan: { id: operation.planId, status: "created" } }
-      : {}
 });
 
 const conversationReducer = reducer<
@@ -235,16 +205,6 @@ export const socialPack: CortexPack = pack({
         }
       }
     ]
-});
-
-export const planningPack: CortexPack = pack({
-  id: "cortex:planning",
-  reducer: planningReducer,
-  moduleId: "cortex-planning:manager",
-  frameContributors: [
-    frameContributor("cortex:planning", "cortex-planning:active", STANDARD_SLICE_IDS.planning, 2048, (state) =>
-      sliceValue<PlanningState>(state, STANDARD_SLICE_IDS.planning))
-  ]
 });
 
 export const conversationPack: CortexPack = pack({
@@ -555,14 +515,6 @@ function isSocialState(value: unknown): value is SocialState {
         ["trust", "affection", "respect", "fear", "attraction", "resentment", "familiarity"]
           .every((key) => isFiniteNumber(relationship[key]))
     );
-}
-function isPlanningState(value: unknown): value is PlanningState {
-  if (!isRecord(value)) return false;
-  const plan = value["activePlan"];
-  return plan === undefined ||
-    (isRecord(plan) &&
-      typeof plan["id"] === "string" &&
-      (plan["status"] === "created" || plan["status"] === "invalidated"));
 }
 function isConversationState(value: unknown): value is ConversationState {
   if (!isRecord(value)) return false;

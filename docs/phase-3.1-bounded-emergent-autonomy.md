@@ -340,6 +340,7 @@ interface PlanProposal {
   readonly steps: readonly ProposedPlanStep[];
   readonly successConditionRefs: readonly NamespacedId[];
   readonly failureConditionRefs: readonly NamespacedId[];
+  readonly acknowledgedObligationIds: readonly string[];
   readonly reasonCode: NamespacedId;
 }
 
@@ -691,7 +692,7 @@ envelope.
 
 Implementation proceeds in bounded slices.
 
-### Slice A — Goal contracts and deterministic manager
+### Slice A — Goal contracts and deterministic manager (complete)
 
 - register goal definitions and policies;
 - implement the opportunity gate and task-specific reasoner interface;
@@ -699,7 +700,7 @@ Implementation proceeds in bounded slices.
 - implement goal lifecycle reducers; and
 - add offline invalid, stale, cancelled, conflict, and grounding tests.
 
-### Slice B — Capability planning and deterministic manager
+### Slice B — Capability planning and deterministic manager (complete)
 
 - complete capability and strategy-template contracts;
 - implement planning frames and reasoner interface;

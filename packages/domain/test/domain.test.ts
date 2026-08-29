@@ -97,6 +97,34 @@ const droneDomain: GameDomain = {
       conflictTags: ["drone:survival-risk"]
     }
   ],
+  capabilities: [{
+    id: "drone:withdraw",
+    version: 1,
+    description: "Move the unit away from danger",
+    parameterSchema: { type: "object", additionalProperties: false },
+    targetTypes: ["drone:unit"],
+    supportedGoals: ["drone:preserve-unit"],
+    requirements: ["drone:can-move"],
+    risks: ["drone:mission-delay"],
+    potentialEffects: ["drone:survival"],
+    actionIds: ["drone:retreat"],
+    planningCost: { effort: 0.3, risk: 0.2 },
+    incompatibleWith: []
+  }],
+  strategies: [{
+    id: "drone:direct-withdrawal",
+    version: 1,
+    description: "Withdraw directly when the unit is threatened",
+    supportedGoals: ["drone:preserve-unit"],
+    stages: [{
+      stageId: "withdraw",
+      capabilityOptions: ["drone:withdraw"],
+      dependsOn: [],
+      optional: false
+    }],
+    successConditionRefs: ["drone:survival"],
+    failureConditionRefs: []
+  }],
   tags: [
     { id: "drone:mobile", version: 1, description: "Can change position" },
     { id: "drone:movement", version: 1, description: "Movement action" },
@@ -132,11 +160,11 @@ describe("DomainRegistry", () => {
     );
   });
 
-  it("fails legacy manifests clearly when the v2 goals collection is absent", () => {
+  it("fails legacy manifests clearly when v2 autonomy collections are absent", () => {
     const legacy = { ...droneDomain } as Partial<GameDomain>;
     delete legacy.goals;
     expect(() => new DomainRegistry().register(legacy as GameDomain)).toThrow(
-      "Domain manifest v2 requires an explicit goals array"
+      "Domain manifest v2 requires explicit goals, capabilities, and strategies arrays"
     );
   });
 

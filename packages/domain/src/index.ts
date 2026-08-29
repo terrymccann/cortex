@@ -89,6 +89,37 @@ export interface GoalDefinition extends VersionedDefinition {
   readonly conflictTags: readonly NamespacedId[];
 }
 
+export interface CapabilityPlanningCost {
+  readonly effort: number;
+  readonly risk: number;
+}
+
+export interface CapabilityDefinition extends VersionedDefinition {
+  readonly parameterSchema: JsonSchema;
+  readonly targetTypes: readonly NamespacedId[];
+  readonly supportedGoals: readonly NamespacedId[];
+  readonly requirements: readonly NamespacedId[];
+  readonly risks: readonly NamespacedId[];
+  readonly potentialEffects: readonly NamespacedId[];
+  readonly actionIds: readonly NamespacedId[];
+  readonly planningCost: CapabilityPlanningCost;
+  readonly incompatibleWith: readonly NamespacedId[];
+}
+
+export interface StrategyStageDefinition {
+  readonly stageId: string;
+  readonly capabilityOptions: readonly NamespacedId[];
+  readonly dependsOn: readonly string[];
+  readonly optional: boolean;
+}
+
+export interface StrategyTemplateDefinition extends VersionedDefinition {
+  readonly supportedGoals: readonly NamespacedId[];
+  readonly stages: readonly StrategyStageDefinition[];
+  readonly successConditionRefs: readonly NamespacedId[];
+  readonly failureConditionRefs: readonly NamespacedId[];
+}
+
 export interface GameDomain {
   readonly id: NamespacedId;
   readonly version: string;
@@ -102,6 +133,8 @@ export interface GameDomain {
   readonly relationshipDimensions: readonly RelationshipDimensionDefinition[];
   readonly motivations: readonly MotivationDefinition[];
   readonly goals: readonly GoalDefinition[];
+  readonly capabilities: readonly CapabilityDefinition[];
+  readonly strategies: readonly StrategyTemplateDefinition[];
   readonly tags: readonly SemanticTag[];
 }
 
@@ -124,6 +157,8 @@ export type DomainDefinition =
   | RelationshipDimensionDefinition
   | MotivationDefinition
   | GoalDefinition
+  | CapabilityDefinition
+  | StrategyTemplateDefinition
   | SemanticTag;
 
 export class DomainValidationError extends Error {
@@ -200,14 +235,55 @@ export class DomainRegistry {
       .sort((left, right) => left.id.localeCompare(right.id));
   }
 
+  capability(id: NamespacedId): Readonly<CapabilityDefinition> | undefined {
+    const capability = [...this.#domains.values()]
+      .flatMap((domain) => domain.capabilities)
+      .find((candidate) => candidate.id === id);
+    return capability === undefined ? undefined : structuredClone(capability);
+  }
+
+  capabilities(): readonly Readonly<CapabilityDefinition>[] {
+    return [...this.#domains.values()]
+      .flatMap((domain) => domain.capabilities)
+      .map((capability) => structuredClone(capability))
+      .sort((left, right) => left.id.localeCompare(right.id));
+  }
+
+  strategy(id: NamespacedId): Readonly<StrategyTemplateDefinition> | undefined {
+    const strategy = [...this.#domains.values()]
+      .flatMap((domain) => domain.strategies)
+      .find((candidate) => candidate.id === id);
+    return strategy === undefined ? undefined : structuredClone(strategy);
+  }
+
+  strategies(): readonly Readonly<StrategyTemplateDefinition>[] {
+    return [...this.#domains.values()]
+      .flatMap((domain) => domain.strategies)
+      .map((strategy) => structuredClone(strategy))
+      .sort((left, right) => left.id.localeCompare(right.id));
+  }
+
+  effect(id: NamespacedId): Readonly<EffectDefinition> | undefined {
+    const effect = [...this.#domains.values()]
+      .flatMap((domain) => domain.effects)
+      .find((candidate) => candidate.id === id);
+    return effect === undefined ? undefined : structuredClone(effect);
+  }
+
   private validateDomain(domain: GameDomain): void {
     this.assertId(domain.id, "domain");
     if (domain.version.trim().length === 0) throw new DomainValidationError("Domain version is required");
     if (domain.cortexSdkRange.trim().length === 0) {
       throw new DomainValidationError("Cortex SDK compatibility range is required");
     }
-    if (!Array.isArray((domain as Partial<GameDomain>).goals)) {
-      throw new DomainValidationError("Domain manifest v2 requires an explicit goals array");
+    if (
+      !Array.isArray((domain as Partial<GameDomain>).goals) ||
+      !Array.isArray((domain as Partial<GameDomain>).capabilities) ||
+      !Array.isArray((domain as Partial<GameDomain>).strategies)
+    ) {
+      throw new DomainValidationError(
+        "Domain manifest v2 requires explicit goals, capabilities, and strategies arrays"
+      );
     }
 
     const definitions = this.definitionsOf(domain);
@@ -232,6 +308,9 @@ export class DomainRegistry {
     const constraintIds = new Set(domain.constraints.map((constraint) => constraint.id));
     const effectIds = new Set(domain.effects.map((effect) => effect.id));
     const effects = new Map(domain.effects.map((effect) => [effect.id, effect]));
+    const actionIds = new Set(domain.actions.map((action) => action.id));
+    const goalIds = new Set(domain.goals.map((goal) => goal.id));
+    const capabilityIds = new Set(domain.capabilities.map((capability) => capability.id));
     for (const action of domain.actions) {
       this.assertRegisteredTag(action.category, tagIds, `action category for ${action.id}`);
       this.assertId(action.skillId, `skill for ${action.id}`);
@@ -343,10 +422,89 @@ export class DomainRegistry {
         throw new DomainValidationError(`Goal has no relevant capabilities: ${goal.id}`);
       }
       for (const capabilityId of goal.relevantCapabilities) {
-        this.assertId(capabilityId, `capability reference for ${goal.id}`);
+        if (!capabilityIds.has(capabilityId)) {
+          throw new DomainValidationError(`Unknown capability ${capabilityId} in goal ${goal.id}`);
+        }
       }
       for (const tag of goal.conflictTags) {
         this.assertRegisteredTag(tag, tagIds, `conflict tag for ${goal.id}`);
+      }
+    }
+    for (const capability of domain.capabilities) {
+      if (!isObjectSchema(capability.parameterSchema)) {
+        throw new DomainValidationError(`Capability parameter schema must describe an object: ${capability.id}`);
+      }
+      if (capability.supportedGoals.length === 0 || capability.supportedGoals.some((id) => !goalIds.has(id))) {
+        throw new DomainValidationError(`Unknown or missing supported goal in capability ${capability.id}`);
+      }
+      if (capability.actionIds.length === 0 || capability.actionIds.some((id) => !actionIds.has(id))) {
+        throw new DomainValidationError(`Unknown or missing action in capability ${capability.id}`);
+      }
+      for (const targetType of capability.targetTypes) {
+        if (!entityIds.has(targetType)) throw new DomainValidationError(`Unknown capability target type ${targetType}`);
+      }
+      for (const requirement of capability.requirements) {
+        this.assertRegisteredDefinition(requirement, constraintIds, `capability constraint for ${capability.id}`);
+      }
+      for (const risk of capability.risks) {
+        this.assertRegisteredTag(risk, tagIds, `capability risk for ${capability.id}`);
+      }
+      for (const effectId of capability.potentialEffects) {
+        this.assertRegisteredDefinition(effectId, effectIds, `capability effect for ${capability.id}`);
+      }
+      if (
+        !Number.isFinite(capability.planningCost.effort) || capability.planningCost.effort < 0 || capability.planningCost.effort > 1 ||
+        !Number.isFinite(capability.planningCost.risk) || capability.planningCost.risk < 0 || capability.planningCost.risk > 1
+      ) {
+        throw new DomainValidationError(`Invalid planning cost in capability ${capability.id}`);
+      }
+      for (const incompatibleId of capability.incompatibleWith) {
+        if (!capabilityIds.has(incompatibleId) || incompatibleId === capability.id) {
+          throw new DomainValidationError(`Unknown or self-incompatible capability in ${capability.id}`);
+        }
+      }
+      for (const goalId of capability.supportedGoals) {
+        const goal = domain.goals.find((candidate) => candidate.id === goalId)!;
+        if (!goal.relevantCapabilities.includes(capability.id)) {
+          throw new DomainValidationError(`Capability ${capability.id} is not relevant to supported goal ${goalId}`);
+        }
+      }
+    }
+    for (const strategy of domain.strategies) {
+      if (strategy.supportedGoals.length === 0 || strategy.supportedGoals.some((id) => !goalIds.has(id))) {
+        throw new DomainValidationError(`Unknown or missing supported goal in strategy ${strategy.id}`);
+      }
+      const stageIds = new Set<string>();
+      for (const stage of strategy.stages) {
+        if (stage.stageId.trim().length === 0 || stageIds.has(stage.stageId)) {
+          throw new DomainValidationError(`Invalid or duplicate strategy stage in ${strategy.id}`);
+        }
+        stageIds.add(stage.stageId);
+        if (stage.capabilityOptions.length === 0 || stage.capabilityOptions.some((id) => !capabilityIds.has(id))) {
+          throw new DomainValidationError(`Unknown or missing stage capability in strategy ${strategy.id}`);
+        }
+        if (stage.capabilityOptions.some((id) => {
+          const capability = domain.capabilities.find((candidate) => candidate.id === id)!;
+          return strategy.supportedGoals.some((goalId) => !capability.supportedGoals.includes(goalId));
+        })) {
+          throw new DomainValidationError(`Strategy capability does not support every strategy goal: ${strategy.id}`);
+        }
+      }
+      for (const stage of strategy.stages) {
+        if (stage.dependsOn.some((id) => !stageIds.has(id) || id === stage.stageId)) {
+          throw new DomainValidationError(`Invalid strategy dependency in ${strategy.id}`);
+        }
+      }
+      assertAcyclic(strategy.stages.map((stage) => ({ id: stage.stageId, dependsOn: stage.dependsOn })), `strategy ${strategy.id}`);
+      for (const effectId of [...strategy.successConditionRefs, ...strategy.failureConditionRefs]) {
+        if (!effectIds.has(effectId)) throw new DomainValidationError(`Unknown strategy condition ${effectId}`);
+      }
+      for (const goalId of strategy.supportedGoals) {
+        const goal = domain.goals.find((candidate) => candidate.id === goalId)!;
+        if (!strategy.successConditionRefs.includes(goal.successCondition.definitionId) ||
+          strategy.failureConditionRefs.some((effectId) => !goal.failureConditions.some((condition) => condition.definitionId === effectId))) {
+          throw new DomainValidationError(`Strategy conditions do not match supported goal ${goalId}`);
+        }
       }
     }
   }
@@ -362,6 +520,8 @@ export class DomainRegistry {
       ...domain.relationshipDimensions,
       ...domain.motivations,
       ...domain.goals,
+      ...domain.capabilities,
+      ...domain.strategies,
       ...domain.tags
     ];
   }
@@ -420,6 +580,24 @@ export const validateJsonSchema = (schema: JsonSchema, value: unknown): boolean 
 };
 
 const isObjectSchema = (schema: JsonSchema): boolean => schema["type"] === "object";
+
+const assertAcyclic = (
+  nodes: readonly { readonly id: string; readonly dependsOn: readonly string[] }[],
+  label: string
+): void => {
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const visiting = new Set<string>();
+  const visited = new Set<string>();
+  const visit = (id: string): void => {
+    if (visited.has(id)) return;
+    if (visiting.has(id)) throw new DomainValidationError(`Dependency cycle in ${label}`);
+    visiting.add(id);
+    for (const dependency of byId.get(id)?.dependsOn ?? []) visit(dependency);
+    visiting.delete(id);
+    visited.add(id);
+  };
+  for (const node of nodes) visit(node.id);
+};
 
 const canonicalJson = (value: unknown): string => {
   if (value === null || typeof value === "boolean" || typeof value === "string") {

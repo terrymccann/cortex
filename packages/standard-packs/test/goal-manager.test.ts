@@ -34,7 +34,27 @@ const domain: GameDomain = {
   id: "test:autonomy",
   version: "1.0.0",
   cortexSdkRange: ">=0.0.0",
-  actions: [],
+  actions: [{
+    id: "test:protect-action",
+    version: 1,
+    description: "Protect a target",
+    category: "test:goal-action",
+    targetTypes: ["test:target"],
+    argumentSchema: { type: "object", additionalProperties: false },
+    risks: [], requirements: [], potentialEffects: ["test:target-protected"],
+    motivationalAffordances: [],
+    skillId: "test:protect-skill"
+  }, {
+    id: "test:inspect-action",
+    version: 1,
+    description: "Inspect a target",
+    category: "test:goal-action",
+    targetTypes: ["test:target"],
+    argumentSchema: { type: "object", additionalProperties: false },
+    risks: [], requirements: [], potentialEffects: ["test:target-protected"],
+    motivationalAffordances: [],
+    skillId: "test:inspect-skill"
+  }],
   entities: [{
     id: "test:target",
     version: 1,
@@ -111,7 +131,24 @@ const domain: GameDomain = {
     defaultHorizon: "short",
     conflictTags: ["test:exclusive-duty"]
   }],
-  tags: [{ id: "test:exclusive-duty", version: 1, description: "An exclusive duty" }]
+  capabilities: [{
+    id: "test:protect", version: 1, description: "Protect a grounded target",
+    parameterSchema: { type: "object", additionalProperties: false },
+    targetTypes: ["test:target"], supportedGoals: ["test:protect-target"],
+    requirements: [], risks: [], potentialEffects: ["test:target-protected"],
+    actionIds: ["test:protect-action"], planningCost: { effort: 0.4, risk: 0.1 }, incompatibleWith: []
+  }, {
+    id: "test:inspect", version: 1, description: "Inspect a grounded target",
+    parameterSchema: { type: "object", additionalProperties: false },
+    targetTypes: ["test:target"], supportedGoals: ["test:inspect-target"],
+    requirements: [], risks: [], potentialEffects: ["test:target-protected"],
+    actionIds: ["test:inspect-action"], planningCost: { effort: 0.2, risk: 0.1 }, incompatibleWith: []
+  }],
+  strategies: [],
+  tags: [
+    { id: "test:exclusive-duty", version: 1, description: "An exclusive duty" },
+    { id: "test:goal-action", version: 1, description: "An action serving a goal" }
+  ]
 };
 
 const proposal = (overrides: Partial<GoalProposal> = {}): GoalProposal => ({

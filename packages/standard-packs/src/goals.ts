@@ -626,6 +626,10 @@ const optionalGoalsState = (state: Readonly<AgentState>): Readonly<GoalsState> |
     : undefined;
 };
 
+export const readGoalsState = (
+  state: Readonly<AgentState>
+): Readonly<GoalsState> | undefined => optionalGoalsState(state);
+
 const goalsState = (state: Readonly<AgentState>): Readonly<GoalsState> => {
   const value = optionalGoalsState(state);
   if (!value) throw new Error("Missing compatible goals state slice");

@@ -30,9 +30,9 @@ different goal vocabulary.
 
 Domain registration rejects unknown motivations, effects, effect versions,
 entity types, conflict tags, invalid condition parameters, empty capability
-reachability, and malformed object parameter schemas. Capability references are
-validated as namespaced semantic IDs in Slice A; their full registry and
-compatibility validation belongs to Slice B.
+reachability, and malformed object parameter schemas. Slice B subsequently
+completed the capability registry and now resolves every goal capability
+reference against a versioned domain definition.
 
 ## Opportunity gate
 
@@ -110,6 +110,6 @@ authoritative completion, and terminal-state rejection. Plan construction,
 step coordination, full trajectory replay, inspection, and behavioral quality
 evaluation remain assigned to Slices B through E.
 
-The completed default matrix makes no provider calls: Cortex passes typecheck,
-build, and 79 tests across 14 files; the sandbox passes typecheck, build, and 36
-tests across 8 files.
+The Slice A completion matrix made no provider calls: Cortex passed typecheck,
+build, and 79 tests across 14 files; the sandbox passed typecheck, build, and 36
+tests across 8 files. Later slices extend those totals.
