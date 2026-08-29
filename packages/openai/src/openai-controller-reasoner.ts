@@ -20,6 +20,7 @@ export interface OpenAIUsage {
 
 export interface OpenAIInvocationRecord {
   readonly frameId: string;
+  readonly reasonerKind?: "controller" | "goal" | "planner";
   readonly promptVersion: string;
   readonly model: string;
   readonly responseId?: string;
@@ -103,6 +104,7 @@ export class OpenAIControllerReasoner implements ControllerReasoner {
       }
       await this.audit({
         frameId: frame.frameId,
+        reasonerKind: "controller",
         promptVersion: OPENAI_CONTROLLER_PROMPT_VERSION,
         model: this.options.model,
         responseId,
@@ -121,6 +123,7 @@ export class OpenAIControllerReasoner implements ControllerReasoner {
             });
       await this.audit({
         frameId: frame.frameId,
+        reasonerKind: "controller",
         promptVersion: OPENAI_CONTROLLER_PROMPT_VERSION,
         model: this.options.model,
         ...(responseId === undefined ? {} : { responseId }),

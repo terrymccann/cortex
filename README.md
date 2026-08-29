@@ -50,6 +50,9 @@ are recorded in
 Slice D accepted cognition records, zero-model full-trajectory replay, and
 structured inspection are recorded in
 [docs/phase-3.1-slice-d-replay-inspection.md](docs/phase-3.1-slice-d-replay-inspection.md).
+Slice E controlled behavioral cohorts, autonomy provider adapters, metrics, and
+baseline policy are recorded in
+[docs/phase-3.1-slice-e-behavioral-evaluation.md](docs/phase-3.1-slice-e-behavioral-evaluation.md).
 
 The first implementation milestone is a deterministic, in-memory vertical slice.
 PostgreSQL, pgvector, Redis, BullMQ, a visual client, and a narrative Director are

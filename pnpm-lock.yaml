@@ -33,6 +33,9 @@ importers:
       '@cortex/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@cortex/domain':
+        specifier: workspace:*
+        version: link:../domain
       '@cortex/runtime':
         specifier: workspace:*
         version: link:../cortex

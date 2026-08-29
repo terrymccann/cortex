@@ -723,7 +723,7 @@ Implementation proceeds in bounded slices.
 - reproduce full trajectories with zero model calls; and
 - add structured inspector views and causal records.
 
-### Slice E — Behavioral evaluation and baseline
+### Slice E — Behavioral evaluation and baseline (implementation complete; live baseline pending)
 
 - build controlled persona/history scenario matrices;
 - add diversity, coherence, sensitivity, collapse, safety, and cost metrics;
