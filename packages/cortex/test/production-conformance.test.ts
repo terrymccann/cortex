@@ -28,6 +28,8 @@ describe("production source conformance", () => {
     for (const forbidden of [
       "drone:",
       "colony:",
+      "greyhaven:",
+      "living-story",
       "Marcus",
       "Elena",
       "socialSignals",

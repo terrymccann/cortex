@@ -1,6 +1,6 @@
 # Phase 3.2: Living Story Runtime
 
-Status: implementation in progress; Slices A through D complete
+Status: implementation complete; authenticated live baseline acceptance pending
 Scope: authoritative textual worlds, bounded ensemble orchestration, dialogue,
 narrative rendering, designer authoring, inspection, evaluation, and replay  
 Depends on:
@@ -824,7 +824,7 @@ repository and must not appear in Cortex production source.
   chronicle, style, and inspection modes; and
 - link every narrative beat to accepted source events.
 
-### Slice E — Replay, evaluation, and product proof
+### Slice E — Replay, evaluation, and product proof (implementation complete; live baseline pending)
 
 - replay a complete story with zero model calls;
 - add controlled ensemble, continuity, secret-leakage, thread interleaving,

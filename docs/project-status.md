@@ -9,9 +9,9 @@ delivery progress rather than token, API, or model usage.
 
 **Current milestone:** Phase 3.2 — Living Story Runtime
 
-**Status:** In progress; Slices A through D implemented in the separate `cortex-living-story` repository
+**Status:** Implementation complete in the separate `cortex-living-story` repository; authenticated live baseline acceptance pending
 
-**Next step:** Slice E — Replay, evaluation, inspection, and product proof
+**Next step:** Run and review the bounded Slice E live proof, then explicitly freeze the accepted Phase 3.2 baseline
 
 ## Milestones
 
@@ -32,7 +32,7 @@ delivery progress rather than token, API, or model usage.
 | B | Complete | Bounded story actions, dialogue, and observer projections |
 | C | Complete | Ensemble scheduling, scenes, and story-thread orchestration |
 | D | Complete | Narrative Director, grounded prose renderer, immutable style editions, and local reader experience |
-| E | Next | Deterministic replay, evaluation, inspection, and product proof |
+| E | Awaiting live acceptance | Replay, evaluation, inspection, live-provider proof path, and deterministic candidate baseline implemented |
 
 ## Status convention
 
