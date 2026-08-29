@@ -7,11 +7,11 @@ delivery progress rather than token, API, or model usage.
 
 ## Current position
 
-**Current milestone:** Phase 3.2 — Living Story Runtime
+**Current milestone:** Phase 3.3 — Living Story Session Runtime
 
-**Status:** Complete; authenticated Phase 3.2 live baseline accepted and frozen in the separate `cortex-living-story` repository
+**Status:** In progress; implementation specification approved and Slice A ready
 
-**Next step:** Review the Phase 3.2 exit artifacts and scope the next product milestone
+**Next step:** Implement Slice A, the headless autonomous session loop, in the separate `cortex-living-story` repository
 
 ## Milestones
 
@@ -23,6 +23,7 @@ delivery progress rather than token, API, or model usage.
 | Phase 3.0 — Core Generalization | Complete | Scenario-agnostic public contracts, composable state and frames, standard packs, and cross-domain conformance |
 | Phase 3.1 — Bounded Emergent Autonomy | Complete | Goal formation, capability planning, outcome-driven coordination, replay, inspection, and accepted behavioral baseline |
 | Phase 3.2 — Living Story Runtime | Complete | Text-first ensemble simulation, Cortex character trajectories, story threads, grounded prose, reader modes, exact replay, behavioral evaluation, and an accepted live baseline |
+| Phase 3.3 — Living Story Session Runtime | In progress | Approved sustained-session architecture; headless autonomous loop, soak evaluation, Story Workbench, and basic authoring workflow sequenced |
 
 ## Phase 3.2 delivery slices
 
@@ -34,6 +35,15 @@ delivery progress rather than token, API, or model usage.
 | D | Complete | Narrative Director, grounded prose renderer, immutable style editions, and local reader experience |
 | E | Complete | Exact replay, evaluation, inspection, clean-room product proof, and accepted live baseline |
 
+## Phase 3.3 delivery slices
+
+| Slice | Status | Scope |
+| --- | --- | --- |
+| A | Next | Headless autonomous session lifecycle, activation, action bridge, scheduling, progress detection, budgets, and checkpointing |
+| B | Pending | Session soak evaluation, deadlock and repetition diagnostics, checkpoint equivalence, branching, usage aggregation, and replay hardening |
+| C | Pending | Local Story Workbench for prose, lifecycle controls, threads, inspection, usage, fallbacks, checkpoints, and replay |
+| D | Pending | Schema-backed basic authoring workflow and a second portable scenario with no product-source changes |
+
 ## Status convention
 
 - **Complete:** implementation and required verification are accepted.
@@ -42,5 +52,8 @@ delivery progress rather than token, API, or model usage.
 - **Pending:** sequenced but not started.
 - **Planned:** specified at phase level but not yet implemented.
 
-The detailed Phase 3.2 requirements and stop conditions remain authoritative in
-[phase-3.2-living-story-runtime.md](phase-3.2-living-story-runtime.md).
+The completed Phase 3.2 boundary remains authoritative in
+[phase-3.2-living-story-runtime.md](phase-3.2-living-story-runtime.md). The
+approved Phase 3.3 scope, delivery order, acceptance criteria, and stop
+conditions are authoritative in
+[phase-3.3-living-story-session-runtime.md](phase-3.3-living-story-session-runtime.md).

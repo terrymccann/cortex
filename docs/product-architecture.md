@@ -184,12 +184,20 @@ history, and resistance to repetitive or dominant-choice collapse. Success is
 not unconstrained action invention. Success is differentiated, emergent agency
 inside an authoritative simulation.
 
-With the Phase 3.1 baseline frozen, the next product-boundary proof is
+With the Phase 3.1 baseline frozen, the completed product-boundary proof is
 [Phase 3.2: Living Story Runtime](phase-3.2-living-story-runtime.md). It applies
 the public Cortex contracts in a separate text-first product where several
 characters act inside an authoritative story world and accepted events are
 rendered as live prose. The story host and Narrative Director remain consumers
 of Cortex rather than new kernel responsibilities.
+
+The next product milestone is
+[Phase 3.3: Living Story Session Runtime](phase-3.3-living-story-session-runtime.md).
+It converts that bounded proof into a sustained autonomous session loop, proves
+session behavior through headless soak evaluation, then exposes the same
+authority path through a thin Story Workbench and schema-backed authoring
+workflow. These remain Living Story product responsibilities rather than Cortex
+kernel concerns.
 
 ## Delivery sequence
 

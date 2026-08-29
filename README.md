@@ -53,10 +53,14 @@ structured inspection are recorded in
 Slice E controlled behavioral cohorts, autonomy provider adapters, metrics, and
 baseline policy are recorded in
 [docs/phase-3.1-slice-e-behavioral-evaluation.md](docs/phase-3.1-slice-e-behavioral-evaluation.md).
-The next clean-room product proof—a text-first authoritative world with bounded
+The completed clean-room product proof—a text-first authoritative world with bounded
 ensemble characters, narrative rendering, designer authoring, inspection, and
 replay—is specified in
 [docs/phase-3.2-living-story-runtime.md](docs/phase-3.2-living-story-runtime.md).
+The approved next milestone turns that proof into sustained autonomous sessions
+with lifecycle control, soak evaluation, a Story Workbench, and basic scenario
+authoring. Its authoritative scope is
+[docs/phase-3.3-living-story-session-runtime.md](docs/phase-3.3-living-story-session-runtime.md).
 Current delivery progress and the next implementation slice are tracked in
 [docs/project-status.md](docs/project-status.md).
 
