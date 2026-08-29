@@ -12,8 +12,8 @@ import type {
   OpenAIUsage
 } from "./openai-controller-reasoner.js";
 
-export const OPENAI_GOAL_PROMPT_VERSION = "cortex-goal-reasoner-v3";
-export const OPENAI_PLANNER_PROMPT_VERSION = "cortex-planner-reasoner-v3";
+export const OPENAI_GOAL_PROMPT_VERSION = "cortex-goal-reasoner-v4";
+export const OPENAI_PLANNER_PROMPT_VERSION = "cortex-planner-reasoner-v4";
 
 export interface OpenAIGoalFormationFrame {
   readonly schemaVersion: "cortex-goal-formation-frame-v1";
@@ -268,7 +268,7 @@ const goalSchema = (frame: OpenAIGoalFormationFrame): Readonly<Record<string, un
   properties: {
     definitionId: { type: "string", enum: frame.availableDefinitions.map((item) => item.id) },
     definitionVersion: { type: "integer", enum: frame.availableDefinitions.map((item) => item.version) },
-    parameters: { anyOf: frame.availableDefinitions.map((item) => toOpenAIProviderSchema(item.parameterSchema)) },
+    parameters: { anyOf: frame.availableDefinitions.map((item) => goalParameterSchema(item, frame)) },
     motivationIds: {
       type: "array", minItems: 1,
       items: { type: "string", enum: [...new Set(frame.availableDefinitions.flatMap((item) => item.admissibleMotivations))] }
@@ -281,7 +281,7 @@ const goalSchema = (frame: OpenAIGoalFormationFrame): Readonly<Record<string, un
     },
     proposedPriority: { type: "number", minimum: frame.limits.minimumPriority, maximum: frame.limits.maximumPriority },
     proposedHorizon: { type: "string", enum: frame.limits.allowedHorizons },
-    reasonCode: { type: "string", pattern: "^[a-z][a-z0-9-]*:[a-z][a-z0-9-]*$" }
+    reasonCode: { type: "string", maxLength: 100, pattern: "^[a-z][a-z0-9-]*:[a-z][a-z0-9-]*$" }
   },
   required: ["definitionId", "definitionVersion", "parameters", "motivationIds", "evidenceRefs", "proposedPriority", "proposedHorizon", "reasonCode"]
 });
@@ -321,7 +321,7 @@ const planSchema = (frame: OpenAIPlanningFrame): Readonly<Record<string, unknown
     acknowledgedObligationIds: frame.activeObligationIds.length === 0
       ? { type: "array", maxItems: 0, items: { type: "string" } }
       : { type: "array", items: { type: "string", enum: frame.activeObligationIds } },
-    reasonCode: { type: "string", pattern: "^[a-z][a-z0-9-]*:[a-z][a-z0-9-]*$" }
+    reasonCode: { type: "string", maxLength: 100, pattern: "^[a-z][a-z0-9-]*:[a-z][a-z0-9-]*$" }
   },
   required: ["goalId", "strategyId", "steps", "successConditionRefs", "failureConditionRefs", "acknowledgedObligationIds", "reasonCode"]
 });
@@ -335,7 +335,7 @@ const isGoalProposal = (value: unknown, frame: OpenAIGoalFormationFrame): value 
     Array.isArray(value["evidenceRefs"]) && value["evidenceRefs"].every((item) => isRecord(item) && typeof item["eventId"] === "string") &&
     typeof value["proposedPriority"] === "number" &&
     ["immediate", "short", "medium"].includes(String(value["proposedHorizon"])) &&
-    typeof value["reasonCode"] === "string";
+    isReasonCode(value["reasonCode"]);
 };
 
 const isPlanProposal = (value: unknown, frame: OpenAIPlanningFrame): value is OpenAIPlanProposal =>
@@ -347,7 +347,49 @@ const isPlanProposal = (value: unknown, frame: OpenAIPlanningFrame): value is Op
     (step["target"] === undefined || isRecord(step["target"])) && Array.isArray(step["dependsOn"]) &&
     typeof step["optional"] === "boolean") &&
   Array.isArray(value["successConditionRefs"]) && Array.isArray(value["failureConditionRefs"]) &&
-  Array.isArray(value["acknowledgedObligationIds"]) && typeof value["reasonCode"] === "string";
+  Array.isArray(value["acknowledgedObligationIds"]) && isReasonCode(value["reasonCode"]);
+
+const goalParameterSchema = (
+  definition: GoalDefinition,
+  frame: OpenAIGoalFormationFrame
+): Readonly<Record<string, unknown>> => {
+  const schema = toOpenAIProviderSchema(definition.parameterSchema);
+  if (schema["type"] !== "object" || !isRecord(schema["properties"])) return schema;
+  const entities = collectEntityRefs(frame.sections);
+  const properties = { ...schema["properties"] };
+  for (const [parameter, type] of Object.entries(definition.entityParameters)) {
+    const ids = [...new Set(entities.filter((entity) => entity.type === type).map((entity) => entity.id))];
+    const property = properties[parameter];
+    if (ids.length > 0 && isRecord(property)) properties[parameter] = constrainStringEnum(property, ids);
+  }
+  return { ...schema, properties };
+};
+
+const constrainStringEnum = (
+  schema: Readonly<Record<string, unknown>>,
+  values: readonly string[]
+): Readonly<Record<string, unknown>> => {
+  if (schema["type"] === "string") return { ...schema, enum: values };
+  if (!Array.isArray(schema["anyOf"])) return schema;
+  return {
+    ...schema,
+    anyOf: schema["anyOf"].map((item) => isRecord(item) && item["type"] === "string"
+      ? { ...item, enum: values }
+      : item)
+  };
+};
+
+const collectEntityRefs = (value: unknown): readonly EntityRef[] => {
+  if (Array.isArray(value)) return value.flatMap(collectEntityRefs);
+  if (!isRecord(value)) return [];
+  const current = typeof value["type"] === "string" && typeof value["id"] === "string"
+    ? [{ type: value["type"] as NamespacedId, id: value["id"] as EntityRef["id"] }]
+    : [];
+  return [...current, ...Object.values(value).flatMap(collectEntityRefs)];
+};
+
+const isReasonCode = (value: unknown): value is NamespacedId =>
+  typeof value === "string" && value.length <= 100 && /^[a-z][a-z0-9-]*:[a-z][a-z0-9-]*$/.test(value);
 
 const normalizeGoalProposal = (value: unknown, frame: OpenAIGoalFormationFrame): unknown => {
   if (!isRecord(value)) return value;

@@ -126,6 +126,55 @@ describe("OpenAI autonomy reasoners", () => {
     );
   });
 
+  it("grounds entity-valued goal parameters to visible frame entities", async () => {
+    let body: Record<string, unknown> = {};
+    const base = goalFrame();
+    const frame: GoalFormationFrame = {
+      ...base,
+      availableDefinitions: [{
+        ...base.availableDefinitions[0]!,
+        parameterSchema: {
+          type: "object", properties: { targetId: { type: "string" } },
+          required: ["targetId"], additionalProperties: false
+        },
+        entityParameters: { targetId: "test:unit" }
+      }],
+      sections: [{ id: "test:visible", schemaVersion: 1, value: [
+        { type: "test:unit", id: "unit-visible" },
+        { type: "test:other", id: "other-visible" }
+      ] }]
+    };
+    const reasoner = new OpenAIGoalReasoner({
+      apiKey: "test", model: "gpt-test", fetch: async (_url, init) => {
+        body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        return response({
+          definitionId: "test:preserve", definitionVersion: 1,
+          parameters: { targetId: "unit-visible" }, motivationIds: ["test:survival"],
+          evidenceRefs: [{ eventId: "event:risk" }], proposedPriority: 0.9,
+          proposedHorizon: "short", reasonCode: "test:visible-unit"
+        });
+      }
+    });
+    await expect(reasoner.propose(frame, new AbortController().signal)).resolves.toMatchObject({
+      parameters: { targetId: "unit-visible" }
+    });
+    expect(JSON.stringify(body["text"])).toContain('"targetId":{"type":"string","enum":["unit-visible"]}');
+    expect(JSON.stringify(body["text"])).not.toContain('"enum":["other-visible"]');
+  });
+
+  it("rejects an unbounded reason code even if a provider violates its schema", async () => {
+    const reasoner = new OpenAIGoalReasoner({
+      apiKey: "test", model: "gpt-test", fetch: async () => response({
+        definitionId: "test:preserve", definitionVersion: 1, parameters: {},
+        motivationIds: ["test:survival"], evidenceRefs: [{ eventId: "event:risk" }],
+        proposedPriority: 0.9, proposedHorizon: "short", reasonCode: `test:${"x".repeat(100)}`
+      })
+    });
+    await expect(reasoner.propose(goalFrame(), new AbortController().signal)).rejects.toMatchObject({
+      code: "invalid-output:goal-proposal"
+    });
+  });
+
   it("records structurally invalid autonomy output as a validation error", async () => {
     const audit: OpenAIInvocationRecord[] = [];
     const reasoner = new OpenAIGoalReasoner({
