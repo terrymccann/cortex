@@ -1,6 +1,6 @@
 # Phase 3.3: Living Story Session Runtime
 
-Status: approved implementation specification; Slice A is next  
+Status: in progress; Slice A complete and Slice B next
 Scope: sustained autonomous story sessions, lifecycle control, soak evaluation,
 reader/operator workbench, and basic scenario authoring  
 Depends on:
