@@ -11,6 +11,7 @@ import {
   type SimTime
 } from "@cortex/contracts";
 import {
+  fingerprintManifest,
   isNamespacedId,
   validateJsonSchema,
   type CapabilityDefinition,
@@ -18,7 +19,9 @@ import {
   type StrategyTemplateDefinition
 } from "@cortex/domain";
 import {
+  EMPTY_FRAME_MANIFEST_FINGERPRINT,
   FrameBuilder,
+  ReplayMismatchError,
   type AgentState,
   type AgentStateStore,
   type CognitiveFrameContributor,
@@ -28,6 +31,7 @@ import {
   type IntentionCoordinationInput,
   type IntentionCoordinationResult,
   type PatchEnvelope,
+  type RuntimeCompatibilityComponent,
   type StateSliceReducer
 } from "@cortex/runtime";
 import type { CortexPack } from "@cortex/sdk";
@@ -112,6 +116,8 @@ export interface PlanningFrame {
   readonly frameId: string;
   readonly agentId: AgentId;
   readonly basedOnVersion: number;
+  readonly manifestFingerprint: string;
+  readonly compatibilityComponents: readonly RuntimeCompatibilityComponent[];
   readonly activeGoal: Goal;
   readonly capabilities: readonly CapabilityDefinition[];
   readonly strategies: readonly StrategyTemplateDefinition[];
@@ -128,6 +134,60 @@ export interface PlanningFrame {
 export interface PlannerReasoner {
   propose(frame: PlanningFrame, signal: AbortSignal): Promise<PlanProposal>;
 }
+
+export const CORTEX_ACCEPTED_PLAN_RECORD_SCHEMA_VERSION = "cortex-accepted-plan-record-v1" as const;
+
+export interface AcceptedPlanRecord {
+  readonly schemaVersion: typeof CORTEX_ACCEPTED_PLAN_RECORD_SCHEMA_VERSION;
+  readonly frameSchemaVersion: PlanningFrame["schemaVersion"];
+  readonly frameId: string;
+  readonly frameHash: string;
+  readonly manifestFingerprint: string;
+  readonly compatibilityComponents: readonly RuntimeCompatibilityComponent[];
+  readonly frameSections: readonly { readonly id: NamespacedId; readonly schemaVersion: number }[];
+  readonly basedOnVersion: number;
+  readonly offeredCapabilities: readonly { readonly id: NamespacedId; readonly version: number }[];
+  readonly offeredStrategies: readonly { readonly id: NamespacedId; readonly version: number }[];
+  readonly activeObligationIds: readonly string[];
+  readonly proposal: PlanProposal;
+  readonly plan: Plan;
+  readonly resultingStateVersion: number;
+  readonly reasonerMetadata?: Readonly<Record<string, string | number | boolean>>;
+}
+
+export interface AcceptedPlanRecorder { record(record: AcceptedPlanRecord): void | Promise<void>; }
+
+export class MemoryAcceptedPlanRecorder implements AcceptedPlanRecorder {
+  readonly #records: AcceptedPlanRecord[] = [];
+  record(record: AcceptedPlanRecord): void { this.#records.push(structuredClone(record)); }
+  records(): readonly AcceptedPlanRecord[] { return structuredClone(this.#records); }
+}
+
+export interface AcceptedPlanReplayReasoner extends PlannerReasoner {
+  lastAcceptedRecord(frameId: string): AcceptedPlanRecord | undefined;
+}
+
+export class ReplayPlanReasoner implements AcceptedPlanReplayReasoner {
+  #index = 0;
+  #last: AcceptedPlanRecord | undefined;
+  readonly #records: readonly AcceptedPlanRecord[];
+  constructor(records: readonly AcceptedPlanRecord[]) { this.#records = structuredClone(records); }
+  async propose(frame: PlanningFrame, signal: AbortSignal): Promise<PlanProposal> {
+    if (signal.aborted) throw signal.reason;
+    const record = this.#records[this.#index];
+    if (!record) throw new ReplayMismatchError(`Replay has no plan record for ${frame.frameId}`, "replay-plan-record-missing");
+    assertAcceptedPlanFrame(record, frame);
+    this.#index += 1; this.#last = record;
+    return structuredClone(record.proposal);
+  }
+  lastAcceptedRecord(frameId: string): AcceptedPlanRecord | undefined {
+    return this.#last?.frameId === frameId ? structuredClone(this.#last) : undefined;
+  }
+  consumedCount(): number { return this.#index; }
+  remainingCount(): number { return this.#records.length - this.#index; }
+}
+
+export const hashPlanningFrame = (frame: PlanningFrame): string => fingerprintManifest(frame);
 
 export type PlanRejectionReason =
   | "pack-not-installed"
@@ -190,6 +250,10 @@ export interface PlanManagerOptions {
   readonly frameContributors?: readonly CognitiveFrameContributor[];
   readonly deterministicFallback?: (frame: PlanningFrame) => PlanProposal | undefined;
   readonly diagnosticRecorder?: PlanDiagnosticRecorder;
+  readonly acceptedRecorder?: AcceptedPlanRecorder;
+  readonly manifestFingerprint?: string;
+  readonly compatibilityComponents?: readonly RuntimeCompatibilityComponent[];
+  readonly reasonerMetadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
 const defaultPolicy: PlanningPolicy = {
@@ -291,9 +355,9 @@ export const planningReducer: StateSliceReducer = {
 
 export const planningPack: CortexPack = {
   id: "cortex:planning",
-  version: "2.1.0",
+  version: "2.2.0",
   cortexSdkRange: ">=0.0.0",
-  dependencies: [{ packId: "cortex:goals", versionRange: "2.0.0" }],
+  dependencies: [{ packId: "cortex:goals", versionRange: "2.1.0" }],
   stateSlices: [planningReducer],
   modules: [{
     id: "cortex-planning:manager",
@@ -637,7 +701,8 @@ export class PlanManager {
     let source: PlanSource = "reasoner";
     try {
       proposal = await abortable(input.reasoner.propose(frame, signal), signal);
-    } catch {
+    } catch (error) {
+      if (error instanceof ReplayMismatchError) throw error;
       if (externalSignal.aborted) return this.finish(input.goalId, state.version, { status: "cancelled" });
       proposal = this.options.deterministicFallback?.(frame);
       source = "deterministic-policy";
@@ -651,6 +716,10 @@ export class PlanManager {
     }
     const rejected = this.validate(state, goal, proposal, strategies);
     if (rejected) return this.finish(input.goalId, state.version, { status: "rejected", reason: rejected });
+    const replay = isAcceptedPlanReplayReasoner(input.reasoner)
+      ? input.reasoner.lastAcceptedRecord(frame.frameId)
+      : undefined;
+    if (replay) source = replay.plan.source;
     const plan: Plan = {
       id: `plan:${state.id}:${goal.id}:v${state.version}`,
       goalId: goal.id,
@@ -668,6 +737,13 @@ export class PlanManager {
       basedOnVersion: state.version,
       source
     };
+    if (replay && (replay.resultingStateVersion !== state.version + 1 ||
+      canonicalPlanning(replay.plan) !== canonicalPlanning(plan))) {
+      throw new ReplayMismatchError(
+        `Plan replay result mismatch for ${frame.frameId}`,
+        "replay-plan-result-mismatch"
+      );
+    }
     const patch: PatchEnvelope = {
       patchId: plan.id, agentId: state.id, module: "cortex-planning:manager",
       basedOnVersion: state.version, worldVersion: 0, observedThroughSequence: 0,
@@ -675,9 +751,11 @@ export class PlanManager {
       patch: { kind: "state-slice", sliceId: PLANNING_SLICE_ID, operation: { kind: "commit", plan } }
     };
     const applied = await this.stateStore.apply(patch);
-    return this.finish(input.goalId, state.version, applied.status === "applied"
+    const result: PlanProposalResult = applied.status === "applied"
       ? { status: "committed", plan }
-      : { status: "stale" });
+      : { status: "stale" };
+    if (result.status === "committed") await this.acceptOrVerify(frame, proposal, result.plan, input.reasoner);
+    return this.finish(input.goalId, state.version, result);
   }
 
   private frame(state: Readonly<AgentState>, goal: Goal, capabilities: readonly CapabilityDefinition[], strategies: readonly StrategyTemplateDefinition[]): PlanningFrame {
@@ -687,6 +765,8 @@ export class PlanManager {
       frameId: `${state.id}:planning:${goal.id}:v${state.version}`,
       agentId: state.id,
       basedOnVersion: state.version,
+      manifestFingerprint: this.options.manifestFingerprint ?? EMPTY_FRAME_MANIFEST_FINGERPRINT,
+      compatibilityComponents: structuredClone(this.options.compatibilityComponents ?? []),
       activeGoal: structuredClone(goal),
       capabilities: structuredClone(capabilities),
       strategies: structuredClone(strategies),
@@ -753,6 +833,37 @@ export class PlanManager {
       ...(result.status === "rejected" || result.status === "no-plan" ? { reason: result.reason } : {})
     });
     return result;
+  }
+
+  private async acceptOrVerify(
+    frame: PlanningFrame,
+    proposal: PlanProposal,
+    plan: Plan,
+    reasoner: PlannerReasoner
+  ): Promise<void> {
+    const replay = isAcceptedPlanReplayReasoner(reasoner) ? reasoner.lastAcceptedRecord(frame.frameId) : undefined;
+    const reasonerMetadata = replay?.reasonerMetadata ?? this.options.reasonerMetadata;
+    const record: AcceptedPlanRecord = {
+      schemaVersion: CORTEX_ACCEPTED_PLAN_RECORD_SCHEMA_VERSION,
+      frameSchemaVersion: frame.schemaVersion,
+      frameId: frame.frameId,
+      frameHash: hashPlanningFrame(frame),
+      manifestFingerprint: frame.manifestFingerprint,
+      compatibilityComponents: structuredClone(frame.compatibilityComponents),
+      frameSections: frame.sections.map(({ id, schemaVersion }) => ({ id, schemaVersion })),
+      basedOnVersion: frame.basedOnVersion,
+      offeredCapabilities: frame.capabilities.map(({ id, version }) => ({ id, version })),
+      offeredStrategies: frame.strategies.map(({ id, version }) => ({ id, version })),
+      activeObligationIds: [...frame.activeObligationIds],
+      proposal: structuredClone(proposal),
+      plan: structuredClone(plan),
+      resultingStateVersion: (await this.stateStore.snapshot(frame.agentId)).version,
+      ...(reasonerMetadata === undefined ? {} : { reasonerMetadata: structuredClone(reasonerMetadata) })
+    };
+    if (replay && canonicalPlanning(replay) !== canonicalPlanning(record)) {
+      throw new ReplayMismatchError(`Plan replay result mismatch for ${frame.frameId}`, "replay-plan-result-mismatch");
+    }
+    await this.options.acceptedRecorder?.record(record);
   }
 }
 
@@ -925,3 +1036,34 @@ const abortable = <T>(promise: Promise<T>, signal: AbortSignal): Promise<T> => n
   if (signal.aborted) return abort(); signal.addEventListener("abort", abort, { once: true });
   promise.then((value) => { signal.removeEventListener("abort", abort); resolve(value); }, (error: unknown) => { signal.removeEventListener("abort", abort); reject(error); });
 });
+
+const isAcceptedPlanReplayReasoner = (value: PlannerReasoner): value is AcceptedPlanReplayReasoner =>
+  "lastAcceptedRecord" in value && typeof value.lastAcceptedRecord === "function";
+
+const assertAcceptedPlanFrame = (record: AcceptedPlanRecord, frame: PlanningFrame): void => {
+  if (record.schemaVersion !== CORTEX_ACCEPTED_PLAN_RECORD_SCHEMA_VERSION) {
+    throw new ReplayMismatchError(`Unsupported plan record schema for ${frame.frameId}`, "replay-plan-schema-mismatch");
+  }
+  if (record.frameSchemaVersion !== frame.schemaVersion || record.frameId !== frame.frameId ||
+    record.basedOnVersion !== frame.basedOnVersion || record.manifestFingerprint !== frame.manifestFingerprint) {
+    throw new ReplayMismatchError(`Plan replay frame metadata mismatch for ${frame.frameId}`, "replay-plan-frame-mismatch");
+  }
+  if (record.frameHash !== hashPlanningFrame(frame)) {
+    throw new ReplayMismatchError(`Plan replay frame hash mismatch for ${frame.frameId}`, "replay-plan-frame-hash-mismatch");
+  }
+  if (canonicalPlanning(record.compatibilityComponents) !== canonicalPlanning(frame.compatibilityComponents) ||
+    canonicalPlanning(record.frameSections) !== canonicalPlanning(frame.sections.map(({ id, schemaVersion }) => ({ id, schemaVersion }))) ||
+    canonicalPlanning(record.offeredCapabilities) !== canonicalPlanning(frame.capabilities.map(({ id, version }) => ({ id, version }))) ||
+    canonicalPlanning(record.offeredStrategies) !== canonicalPlanning(frame.strategies.map(({ id, version }) => ({ id, version })))) {
+    throw new ReplayMismatchError(`Plan replay compatibility mismatch for ${frame.frameId}`, "replay-plan-compatibility-mismatch");
+  }
+};
+
+const canonicalPlanning = (value: unknown): string => {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(canonicalPlanning).join(",")}]`;
+  return `{${Object.entries(value as Readonly<Record<string, unknown>>)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, item]) => `${JSON.stringify(key)}:${canonicalPlanning(item)}`)
+    .join(",")}}`;
+};

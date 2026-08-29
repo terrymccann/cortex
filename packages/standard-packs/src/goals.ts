@@ -8,12 +8,15 @@ import {
 } from "@cortex/contracts";
 import {
   DomainRegistry,
+  fingerprintManifest,
   isNamespacedId,
   validateJsonSchema,
   type GoalDefinition
 } from "@cortex/domain";
 import {
+  EMPTY_FRAME_MANIFEST_FINGERPRINT,
   FrameBuilder,
+  ReplayMismatchError,
   type AgentState,
   type AgentStateStore,
   type CognitiveFrameContributor,
@@ -21,6 +24,7 @@ import {
   type PatchApplyResult,
   type PatchEnvelope,
   type PerceivedObservation,
+  type RuntimeCompatibilityComponent,
   type StateSliceReducer
 } from "@cortex/runtime";
 import type { CortexPack } from "@cortex/sdk";
@@ -84,6 +88,8 @@ export interface GoalFormationFrame {
   readonly frameId: string;
   readonly agentId: AgentId;
   readonly basedOnVersion: number;
+  readonly manifestFingerprint: string;
+  readonly compatibilityComponents: readonly RuntimeCompatibilityComponent[];
   readonly trigger: GoalTrigger;
   readonly availableDefinitions: readonly GoalDefinition[];
   readonly activeGoals: readonly Goal[];
@@ -101,6 +107,67 @@ export interface GoalFormationFrame {
 export interface GoalReasoner {
   propose(frame: GoalFormationFrame, signal: AbortSignal): Promise<GoalProposal>;
 }
+
+export const CORTEX_ACCEPTED_GOAL_RECORD_SCHEMA_VERSION = "cortex-accepted-goal-record-v1" as const;
+
+export interface AcceptedGoalRecord {
+  readonly schemaVersion: typeof CORTEX_ACCEPTED_GOAL_RECORD_SCHEMA_VERSION;
+  readonly frameSchemaVersion: GoalFormationFrame["schemaVersion"];
+  readonly frameId: string;
+  readonly frameHash: string;
+  readonly manifestFingerprint: string;
+  readonly compatibilityComponents: readonly RuntimeCompatibilityComponent[];
+  readonly frameSections: readonly { readonly id: NamespacedId; readonly schemaVersion: number }[];
+  readonly basedOnVersion: number;
+  readonly offeredDefinitions: readonly { readonly id: NamespacedId; readonly version: number }[];
+  readonly trigger: GoalTrigger;
+  readonly activeObligationIds: readonly string[];
+  readonly proposal: GoalProposal;
+  readonly outcome: "activated" | "merged";
+  readonly goal: Goal;
+  readonly resultingStateVersion: number;
+  readonly reasonerMetadata?: Readonly<Record<string, string | number | boolean>>;
+}
+
+export interface AcceptedGoalRecorder {
+  record(record: AcceptedGoalRecord): void | Promise<void>;
+}
+
+export class MemoryAcceptedGoalRecorder implements AcceptedGoalRecorder {
+  readonly #records: AcceptedGoalRecord[] = [];
+  record(record: AcceptedGoalRecord): void { this.#records.push(structuredClone(record)); }
+  records(): readonly AcceptedGoalRecord[] { return structuredClone(this.#records); }
+}
+
+export interface AcceptedGoalReplayReasoner extends GoalReasoner {
+  lastAcceptedRecord(frameId: string): AcceptedGoalRecord | undefined;
+}
+
+export class ReplayGoalReasoner implements AcceptedGoalReplayReasoner {
+  #index = 0;
+  #last: AcceptedGoalRecord | undefined;
+  readonly #records: readonly AcceptedGoalRecord[];
+
+  constructor(records: readonly AcceptedGoalRecord[]) { this.#records = structuredClone(records); }
+
+  async propose(frame: GoalFormationFrame, signal: AbortSignal): Promise<GoalProposal> {
+    if (signal.aborted) throw signal.reason;
+    const record = this.#records[this.#index];
+    if (!record) throw new ReplayMismatchError(`Replay has no goal record for ${frame.frameId}`, "replay-goal-record-missing");
+    assertAcceptedGoalFrame(record, frame);
+    this.#index += 1;
+    this.#last = record;
+    return structuredClone(record.proposal);
+  }
+
+  lastAcceptedRecord(frameId: string): AcceptedGoalRecord | undefined {
+    return this.#last?.frameId === frameId ? structuredClone(this.#last) : undefined;
+  }
+  consumedCount(): number { return this.#index; }
+  remainingCount(): number { return this.#records.length - this.#index; }
+}
+
+export const hashGoalFormationFrame = (frame: GoalFormationFrame): string => fingerprintManifest(frame);
 
 export interface GoalConditionMatcher {
   readonly definitionId: NamespacedId;
@@ -200,6 +267,10 @@ export interface GoalManagerOptions {
   readonly conditionMatchers?: readonly GoalConditionMatcher[];
   readonly frameContributors?: readonly CognitiveFrameContributor[];
   readonly diagnosticRecorder?: GoalDiagnosticRecorder;
+  readonly acceptedRecorder?: AcceptedGoalRecorder;
+  readonly manifestFingerprint?: string;
+  readonly compatibilityComponents?: readonly RuntimeCompatibilityComponent[];
+  readonly reasonerMetadata?: Readonly<Record<string, string | number | boolean>>;
 }
 
 export class GoalOpportunityGate {
@@ -266,7 +337,7 @@ export const goalsReducer: StateSliceReducer = {
 
 export const goalsPack: CortexPack = {
   id: "cortex:goals",
-  version: "2.0.0",
+  version: "2.1.0",
   cortexSdkRange: ">=0.0.0",
   dependencies: [],
   stateSlices: [goalsReducer],
@@ -353,6 +424,8 @@ export class GoalManager {
       frameId: `${input.agentId}:goal:${input.trigger.id}:v${state.version}`,
       agentId: input.agentId,
       basedOnVersion: state.version,
+      manifestFingerprint: this.options.manifestFingerprint ?? EMPTY_FRAME_MANIFEST_FINGERPRINT,
+      compatibilityComponents: structuredClone(this.options.compatibilityComponents ?? []),
       trigger: structuredClone(input.trigger),
       availableDefinitions,
       activeGoals: stateGoals!.goals.filter((goal) => goal.status === "active"),
@@ -379,7 +452,8 @@ export class GoalManager {
     let proposal: GoalProposal;
     try {
       proposal = await abortable(input.reasoner.propose(frame, combinedSignal), combinedSignal);
-    } catch {
+    } catch (error) {
+      if (error instanceof ReplayMismatchError) throw error;
       const result: GoalProposalResult = externalSignal.aborted
         ? { status: "cancelled" }
         : { status: "rejected", reason: "reasoner-error" };
@@ -397,7 +471,17 @@ export class GoalManager {
       await this.recordDiagnostic(input.trigger.id, state.version, result, proposal.definitionId);
       return result;
     }
-    const result = await this.validateAndCommit(state, stateGoals!, proposal, input.now);
+    const replay = isAcceptedGoalReplayReasoner(input.reasoner)
+      ? input.reasoner.lastAcceptedRecord(frame.frameId)
+      : undefined;
+    const result = await this.validateAndCommit(state, stateGoals!, proposal, input.now, replay);
+    if (replay && result.status !== "activated" && result.status !== "merged") {
+      throw new ReplayMismatchError(
+        `Goal replay no longer produces an accepted goal for ${frame.frameId}`,
+        "replay-goal-result-mismatch"
+      );
+    }
+    await this.acceptOrVerify(frame, proposal, result, input.reasoner);
     await this.recordDiagnostic(input.trigger.id, state.version, result, proposal.definitionId);
     return result;
   }
@@ -434,7 +518,8 @@ export class GoalManager {
     state: Readonly<AgentState>,
     stateGoals: Readonly<GoalsState>,
     proposal: GoalProposal,
-    now: SimTime
+    now: SimTime,
+    replay?: AcceptedGoalRecord
   ): Promise<GoalProposalResult> {
     if (!isGoalProposal(proposal)) return { status: "rejected", reason: "invalid-output" };
     const definition = this.domains.goal(proposal.definitionId);
@@ -484,6 +569,7 @@ export class GoalManager {
         priority: Math.max(duplicate.priority, priority),
         evidenceRefs: uniqueEvidence([...duplicate.evidenceRefs, ...proposal.evidenceRefs])
       };
+      assertGoalReplayCommit(replay, "merged", merged, state.version + 1);
       const applied = await this.apply(state, { kind: "merge", goal: merged }, now, proposal.evidenceRefs.map((ref) => ref.eventId));
       return applied.status === "applied" ? { status: "merged", goal: merged } : { status: "stale" };
     }
@@ -511,6 +597,7 @@ export class GoalManager {
       basedOnVersion: state.version,
       source: "reasoner"
     };
+    assertGoalReplayCommit(replay, "activated", goal, state.version + 1);
     const applied = await this.apply(state, { kind: "activate", goal }, now, proposal.evidenceRefs.map((ref) => ref.eventId));
     return applied.status === "applied" ? { status: "activated", goal } : { status: "stale" };
   }
@@ -593,6 +680,39 @@ export class GoalManager {
         : {}),
       ...(definitionId === undefined ? {} : { definitionId })
     });
+  }
+
+  private async acceptOrVerify(
+    frame: GoalFormationFrame,
+    proposal: GoalProposal,
+    result: GoalProposalResult,
+    reasoner: GoalReasoner
+  ): Promise<void> {
+    if (result.status !== "activated" && result.status !== "merged") return;
+    const replay = isAcceptedGoalReplayReasoner(reasoner) ? reasoner.lastAcceptedRecord(frame.frameId) : undefined;
+    const reasonerMetadata = replay?.reasonerMetadata ?? this.options.reasonerMetadata;
+    const record: AcceptedGoalRecord = {
+      schemaVersion: CORTEX_ACCEPTED_GOAL_RECORD_SCHEMA_VERSION,
+      frameSchemaVersion: frame.schemaVersion,
+      frameId: frame.frameId,
+      frameHash: hashGoalFormationFrame(frame),
+      manifestFingerprint: frame.manifestFingerprint,
+      compatibilityComponents: structuredClone(frame.compatibilityComponents),
+      frameSections: frame.sections.map(({ id, schemaVersion }) => ({ id, schemaVersion })),
+      basedOnVersion: frame.basedOnVersion,
+      offeredDefinitions: frame.availableDefinitions.map(({ id, version }) => ({ id, version })),
+      trigger: structuredClone(frame.trigger),
+      activeObligationIds: [...frame.activeObligationIds],
+      proposal: structuredClone(proposal),
+      outcome: result.status,
+      goal: structuredClone(result.goal),
+      resultingStateVersion: (await this.stateStore.snapshot(frame.agentId)).version,
+      ...(reasonerMetadata === undefined ? {} : { reasonerMetadata: structuredClone(reasonerMetadata) })
+    };
+    if (replay && canonical(replay) !== canonical(record)) {
+      throw new ReplayMismatchError(`Goal replay result mismatch for ${frame.frameId}`, "replay-goal-result-mismatch");
+    }
+    await this.options.acceptedRecorder?.record(record);
   }
 }
 
@@ -706,3 +826,40 @@ const abortable = <T>(promise: Promise<T>, signal: AbortSignal): Promise<T> =>
 
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
+
+const isAcceptedGoalReplayReasoner = (value: GoalReasoner): value is AcceptedGoalReplayReasoner =>
+  "lastAcceptedRecord" in value && typeof value.lastAcceptedRecord === "function";
+
+const assertGoalReplayCommit = (
+  record: AcceptedGoalRecord | undefined,
+  outcome: AcceptedGoalRecord["outcome"],
+  goal: Goal,
+  resultingStateVersion: number
+): void => {
+  if (!record) return;
+  if (record.outcome !== outcome || record.resultingStateVersion !== resultingStateVersion ||
+    canonical(record.goal) !== canonical(goal)) {
+    throw new ReplayMismatchError(
+      `Goal replay result mismatch for ${record.frameId}`,
+      "replay-goal-result-mismatch"
+    );
+  }
+};
+
+const assertAcceptedGoalFrame = (record: AcceptedGoalRecord, frame: GoalFormationFrame): void => {
+  if (record.schemaVersion !== CORTEX_ACCEPTED_GOAL_RECORD_SCHEMA_VERSION) {
+    throw new ReplayMismatchError(`Unsupported goal record schema for ${frame.frameId}`, "replay-goal-schema-mismatch");
+  }
+  if (record.frameSchemaVersion !== frame.schemaVersion || record.frameId !== frame.frameId ||
+    record.basedOnVersion !== frame.basedOnVersion || record.manifestFingerprint !== frame.manifestFingerprint) {
+    throw new ReplayMismatchError(`Goal replay frame metadata mismatch for ${frame.frameId}`, "replay-goal-frame-mismatch");
+  }
+  if (record.frameHash !== hashGoalFormationFrame(frame)) {
+    throw new ReplayMismatchError(`Goal replay frame hash mismatch for ${frame.frameId}`, "replay-goal-frame-hash-mismatch");
+  }
+  if (canonical(record.compatibilityComponents) !== canonical(frame.compatibilityComponents) ||
+    canonical(record.frameSections) !== canonical(frame.sections.map(({ id, schemaVersion }) => ({ id, schemaVersion }))) ||
+    canonical(record.offeredDefinitions) !== canonical(frame.availableDefinitions.map(({ id, version }) => ({ id, version })))) {
+    throw new ReplayMismatchError(`Goal replay compatibility mismatch for ${frame.frameId}`, "replay-goal-compatibility-mismatch");
+  }
+};

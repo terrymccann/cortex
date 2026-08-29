@@ -23,6 +23,7 @@ import { planningPack } from "./planning.js";
 
 export * from "./goals.js";
 export * from "./planning.js";
+export * from "./inspection.js";
 
 export const STANDARD_SLICE_IDS = {
   traits: "cortex-traits:state",

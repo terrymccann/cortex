@@ -716,7 +716,7 @@ Implementation proceeds in bounded slices.
 - implement bounded invalidation, replanning, and escalation; and
 - prove obligation precedence.
 
-### Slice D — Record, replay, and inspection
+### Slice D — Record, replay, and inspection (complete)
 
 - add accepted goal and plan record schemas;
 - extend replay bundles and compatibility fingerprints;

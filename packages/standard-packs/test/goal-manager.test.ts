@@ -10,6 +10,7 @@ import { DomainRegistry, type GameDomain } from "@cortex/domain";
 import {
   CortexKernel,
   InMemoryAgentStateStore,
+  ReplayMismatchError,
   createAgentState
 } from "@cortex/runtime";
 import { describe, expect, it } from "vitest";
@@ -18,6 +19,8 @@ import {
   GoalManager,
   GoalOpportunityGate,
   MemoryGoalDiagnosticRecorder,
+  MemoryAcceptedGoalRecorder,
+  ReplayGoalReasoner,
   goalsPack,
   type GoalFormationFrame,
   type GoalConditionMatcher,
@@ -25,6 +28,7 @@ import {
   type GoalReasoner,
   type GoalsState
 } from "../src/goals.js";
+import { CognitionInspector } from "../src/inspection.js";
 
 const agentId = asAgentId("goal-agent");
 const targetRef = { type: "test:target" as const, id: asEntityId("target-1") };
@@ -462,6 +466,71 @@ describe("GoalManager", () => {
       reason: "unknown-definition",
       definitionId: "test:invented-goal"
     }]);
+  });
+
+  it("records and replays an accepted goal with exact frame compatibility and zero reasoner work", async () => {
+    const originalRuntime = await setup();
+    const originalRecorder = new MemoryAcceptedGoalRecorder();
+    const original = await form(new GoalManager(originalRuntime.store, originalRuntime.domains, {
+      acceptedRecorder: originalRecorder,
+      reasonerMetadata: { provider: "scripted", model: "test" }
+    }));
+    expect(original.status).toBe("activated");
+    expect(originalRecorder.records()).toMatchObject([{
+      schemaVersion: "cortex-accepted-goal-record-v1",
+      offeredDefinitions: [{ id: "test:inspect-target", version: 1 }, { id: "test:protect-target", version: 1 }],
+      outcome: "activated",
+      resultingStateVersion: 2
+    }]);
+    expect(new CognitionInspector().inspect({ acceptedGoals: originalRecorder.records() }).goals[0])
+      .toMatchObject({
+        triggerId: "risk",
+        selectedDefinitionId: "test:protect-target",
+        motivationIds: ["test:preservation"],
+        evidenceEventIds: [observedEventId]
+      });
+
+    const replayRuntime = await setup();
+    const replayReasoner = new ReplayGoalReasoner(originalRecorder.records());
+    const replayRecorder = new MemoryAcceptedGoalRecorder();
+    const replayed = await new GoalManager(replayRuntime.store, replayRuntime.domains, {
+      acceptedRecorder: replayRecorder
+    }).form({
+      agentId,
+      trigger: { id: "risk", kind: "material-event", evidenceEventIds: [observedEventId] },
+      now: asSimTime(10),
+      reasoner: replayReasoner
+    });
+    expect(replayed).toEqual(original);
+    expect(replayRecorder.records()).toEqual(originalRecorder.records());
+    expect(replayReasoner.consumedCount()).toBe(1);
+    expect(replayReasoner.remainingCount()).toBe(0);
+  });
+
+  it("rejects goal replay when the recorded frame hash was changed", async () => {
+    const recordedRuntime = await setup(); const recorder = new MemoryAcceptedGoalRecorder();
+    await form(new GoalManager(recordedRuntime.store, recordedRuntime.domains, { acceptedRecorder: recorder }));
+    const tampered = [{ ...recorder.records()[0]!, frameHash: "sha256:tampered" }];
+    const replayRuntime = await setup();
+    await expect(new GoalManager(replayRuntime.store, replayRuntime.domains).form({
+      agentId,
+      trigger: { id: "risk", kind: "material-event", evidenceEventIds: [observedEventId] },
+      now: asSimTime(10), reasoner: new ReplayGoalReasoner(tampered)
+    })).rejects.toBeInstanceOf(ReplayMismatchError);
+  });
+
+  it("rejects a changed accepted goal before mutating replay state", async () => {
+    const recordedRuntime = await setup(); const recorder = new MemoryAcceptedGoalRecorder();
+    await form(new GoalManager(recordedRuntime.store, recordedRuntime.domains, { acceptedRecorder: recorder }));
+    const record = recorder.records()[0]!;
+    const tampered = [{ ...record, goal: { ...record.goal, priority: 0.01 } }];
+    const replayRuntime = await setup();
+    await expect(new GoalManager(replayRuntime.store, replayRuntime.domains).form({
+      agentId,
+      trigger: { id: "risk", kind: "material-event", evidenceEventIds: [observedEventId] },
+      now: asSimTime(10), reasoner: new ReplayGoalReasoner(tampered)
+    })).rejects.toBeInstanceOf(ReplayMismatchError);
+    expect((await replayRuntime.store.snapshot(agentId)).version).toBe(1);
   });
 });
 

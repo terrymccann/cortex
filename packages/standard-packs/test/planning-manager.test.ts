@@ -5,13 +5,15 @@ import {
 import { DomainRegistry, type GameDomain } from "@cortex/domain";
 import {
   ActionAwarenessModule, BoundedController, CortexKernel, FakeWorld, FrameBuilder,
-  InMemoryAgentStateStore, ScriptedControllerReasoner
+  InMemoryAgentStateStore, ReplayMismatchError, ScriptedControllerReasoner
 } from "@cortex/runtime";
 import { describe, expect, it } from "vitest";
 import { GOALS_SLICE_ID, goalsPack, type Goal } from "../src/goals.js";
+import { CognitionInspector } from "../src/inspection.js";
 import {
   PLANNING_SLICE_ID, MemoryPlanDiagnosticRecorder, PlanCoordinator, PlanLifecycleManager,
-  PlanManager, PlanRecoveryManager, planningPack, readPlanningState,
+  MemoryAcceptedPlanRecorder, PlanManager, PlanRecoveryManager, ReplayPlanReasoner,
+  planningPack, readPlanningState,
   type PlanProposal, type PlannerReasoner, type PlanningFrame
 } from "../src/planning.js";
 
@@ -212,6 +214,61 @@ describe("PlanManager", () => {
     const { store, domains } = await setup({ planning: false });
     await expect(new PlanManager(store, domains).propose({ agentId, goalId, now: asSimTime(10), reasoner: reasoner(proposal()) }))
       .resolves.toMatchObject({ status: "rejected", reason: "pack-not-installed" });
+  });
+
+  it("records and replays an accepted plan with exact offered vocabulary", async () => {
+    const originalRuntime = await setup(); const originalRecorder = new MemoryAcceptedPlanRecorder();
+    const original = await new PlanManager(originalRuntime.store, originalRuntime.domains, {
+      acceptedRecorder: originalRecorder,
+      reasonerMetadata: { provider: "scripted", model: "test" }
+    }).propose({ agentId, goalId, now: asSimTime(10), reasoner: reasoner(proposal()) });
+    expect(original.status).toBe("committed");
+    expect(originalRecorder.records()).toMatchObject([{
+      schemaVersion: "cortex-accepted-plan-record-v1",
+      offeredCapabilities: [{ id: "test:alternate", version: 1 }, { id: "test:inspect", version: 1 }, { id: "test:shield", version: 1 }],
+      offeredStrategies: [{ id: "test:inspect-then-shield", version: 1 }],
+      resultingStateVersion: 2
+    }]);
+    expect(new CognitionInspector().inspect({ acceptedPlans: originalRecorder.records() }).plans[0])
+      .toMatchObject({
+        goalId,
+        selectedCapabilities: ["test:inspect", "test:shield"],
+        source: "reasoner"
+      });
+
+    const replayRuntime = await setup(); const replayRecorder = new MemoryAcceptedPlanRecorder();
+    const replayReasoner = new ReplayPlanReasoner(originalRecorder.records());
+    const replayed = await new PlanManager(replayRuntime.store, replayRuntime.domains, {
+      acceptedRecorder: replayRecorder
+    }).propose({ agentId, goalId, now: asSimTime(10), reasoner: replayReasoner });
+    expect(replayed).toEqual(original);
+    expect(replayRecorder.records()).toEqual(originalRecorder.records());
+    expect(replayReasoner.consumedCount()).toBe(1);
+    expect(replayReasoner.remainingCount()).toBe(0);
+  });
+
+  it("rejects plan replay when offered capability metadata was changed", async () => {
+    const originalRuntime = await setup(); const recorder = new MemoryAcceptedPlanRecorder();
+    await new PlanManager(originalRuntime.store, originalRuntime.domains, { acceptedRecorder: recorder })
+      .propose({ agentId, goalId, now: asSimTime(10), reasoner: reasoner(proposal()) });
+    const tampered = [{ ...recorder.records()[0]!, offeredCapabilities: [] }];
+    const replayRuntime = await setup();
+    await expect(new PlanManager(replayRuntime.store, replayRuntime.domains).propose({
+      agentId, goalId, now: asSimTime(10), reasoner: new ReplayPlanReasoner(tampered)
+    })).rejects.toBeInstanceOf(ReplayMismatchError);
+  });
+
+  it("rejects a changed accepted plan before mutating replay state", async () => {
+    const originalRuntime = await setup(); const recorder = new MemoryAcceptedPlanRecorder();
+    await new PlanManager(originalRuntime.store, originalRuntime.domains, { acceptedRecorder: recorder })
+      .propose({ agentId, goalId, now: asSimTime(10), reasoner: reasoner(proposal()) });
+    const record = recorder.records()[0]!;
+    const tampered = [{ ...record, plan: { ...record.plan, reasonCode: "test:changed" as const } }];
+    const replayRuntime = await setup();
+    await expect(new PlanManager(replayRuntime.store, replayRuntime.domains).propose({
+      agentId, goalId, now: asSimTime(10), reasoner: new ReplayPlanReasoner(tampered)
+    })).rejects.toBeInstanceOf(ReplayMismatchError);
+    expect((await replayRuntime.store.snapshot(agentId)).version).toBe(1);
   });
 });
 
