@@ -57,6 +57,8 @@ The next clean-room product proof—a text-first authoritative world with bounde
 ensemble characters, narrative rendering, designer authoring, inspection, and
 replay—is specified in
 [docs/phase-3.2-living-story-runtime.md](docs/phase-3.2-living-story-runtime.md).
+Current delivery progress and the next implementation slice are tracked in
+[docs/project-status.md](docs/project-status.md).
 
 The first implementation milestone is a deterministic, in-memory vertical slice.
 PostgreSQL, pgvector, Redis, BullMQ, a visual client, and a narrative Director are

@@ -1,6 +1,6 @@
 # Phase 3.2: Living Story Runtime
 
-Status: proposed implementation specification  
+Status: implementation in progress; Slice A complete
 Scope: authoritative textual worlds, bounded ensemble orchestration, dialogue,
 narrative rendering, designer authoring, inspection, evaluation, and replay  
 Depends on:
@@ -785,7 +785,7 @@ repository and must not appear in Cortex production source.
 
 ## 25. Delivery slices
 
-### Slice A — Story host and authoring contracts
+### Slice A — Story host and authoring contracts (complete)
 
 - create the separate living-story repository;
 - define scenario, character, location, object, knowledge, thread, pacing, and
