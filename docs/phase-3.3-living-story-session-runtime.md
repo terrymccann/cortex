@@ -1,6 +1,6 @@
 # Phase 3.3: Living Story Session Runtime
 
-Status: in progress; Slices A and B complete, Slice C next
+Status: in progress; Slices A through C complete, Slice D next
 Scope: sustained autonomous story sessions, lifecycle control, soak evaluation,
 reader/operator workbench, and basic scenario authoring  
 Depends on:
@@ -524,6 +524,13 @@ threads, provenance, usage, fallbacks, checkpoints, and replay visible.
 Slice C is complete when the full reference session can be operated and
 understood without using the terminal while producing the same authoritative
 results as headless mode.
+
+Accepted 2026-08-29. The localhost-only Workbench operates the accepted session
+object directly and exposes paced lifecycle controls, grounded prose, threads,
+observer-safe character cognition, canonical provenance, Director safe cuts,
+usage and fallbacks, checkpoints, branches, and exact zero-model replay. The
+67-test suite and desktop/mobile browser acceptance passed with no browser
+console errors.
 
 ### Slice D — Basic authoring workflow
 

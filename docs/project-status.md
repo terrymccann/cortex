@@ -9,9 +9,9 @@ delivery progress rather than token, API, or model usage.
 
 **Current milestone:** Phase 3.3 — Living Story Session Runtime
 
-**Status:** In progress; Slices A and B complete with an accepted authenticated session baseline
+**Status:** In progress; Slices A through C complete with an accepted local Story Workbench
 
-**Next step:** Begin Slice C — the local Story Workbench over the accepted session contracts
+**Next step:** Begin Slice D — the schema-backed authoring workflow and second portable scenario
 
 ## Milestones
 
@@ -23,7 +23,7 @@ delivery progress rather than token, API, or model usage.
 | Phase 3.0 — Core Generalization | Complete | Scenario-agnostic public contracts, composable state and frames, standard packs, and cross-domain conformance |
 | Phase 3.1 — Bounded Emergent Autonomy | Complete | Goal formation, capability planning, outcome-driven coordination, replay, inspection, and accepted behavioral baseline |
 | Phase 3.2 — Living Story Runtime | Complete | Text-first ensemble simulation, Cortex character trajectories, story threads, grounded prose, reader modes, exact replay, behavioral evaluation, and an accepted live baseline |
-| Phase 3.3 — Living Story Session Runtime | In progress | Headless runtime and authenticated soak/replay baseline accepted; Story Workbench and authoring workflow remain |
+| Phase 3.3 — Living Story Session Runtime | In progress | Headless runtime, authenticated soak/replay baseline, and local Story Workbench accepted; authoring workflow remains |
 
 ## Phase 3.2 delivery slices
 
@@ -41,8 +41,8 @@ delivery progress rather than token, API, or model usage.
 | --- | --- | --- |
 | A | Complete | Headless autonomous session lifecycle, activation, Cortex plan/action bridge, deterministic scheduling, progress recovery, budgets, checkpoint/resume, threads, scenes, and grounded prose |
 | B | Complete | Replay, checkpoint equivalence, branching, diagnostics, recorded/live cohorts, usage, injection canary, soak evaluation, and accepted authenticated baseline |
-| C | Next | Local Story Workbench for prose, lifecycle controls, threads, inspection, usage, fallbacks, checkpoints, and replay |
-| D | Pending | Schema-backed basic authoring workflow and a second portable scenario with no product-source changes |
+| C | Complete | Local Story Workbench for prose, lifecycle controls, threads, inspection, usage, fallbacks, checkpoints, branching, and replay |
+| D | Next | Schema-backed basic authoring workflow and a second portable scenario with no product-source changes |
 
 ## Status convention
 
