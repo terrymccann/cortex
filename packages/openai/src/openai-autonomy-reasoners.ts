@@ -12,8 +12,8 @@ import type {
   OpenAIUsage
 } from "./openai-controller-reasoner.js";
 
-export const OPENAI_GOAL_PROMPT_VERSION = "cortex-goal-reasoner-v2";
-export const OPENAI_PLANNER_PROMPT_VERSION = "cortex-planner-reasoner-v2";
+export const OPENAI_GOAL_PROMPT_VERSION = "cortex-goal-reasoner-v3";
+export const OPENAI_PLANNER_PROMPT_VERSION = "cortex-planner-reasoner-v3";
 
 export interface OpenAIGoalFormationFrame {
   readonly schemaVersion: "cortex-goal-formation-frame-v1";
@@ -214,7 +214,8 @@ export class OpenAIGoalReasoner extends OpenAIStructuredAutonomyReasoner {
       instructions: goalInstructions, frameType: "cortex-goal-formation-frame", frame,
       schemaName: "cortex_goal_proposal", schemaDescription: "A bounded registered Cortex goal proposal",
       schema: goalSchema(frame),
-      validate: (candidate) => {
+      validate: (value) => {
+        const candidate = normalizeGoalProposal(value, frame);
         if (!isGoalProposal(candidate, frame)) {
           throw new ControllerReasonerError("OpenAI returned an invalid goal proposal", "invalid-output:goal-proposal", false);
         }
@@ -233,7 +234,7 @@ export class OpenAIPlannerReasoner extends OpenAIStructuredAutonomyReasoner {
       schemaName: "cortex_plan_proposal", schemaDescription: "A bounded capability-level Cortex plan proposal",
       schema: planSchema(frame),
       validate: (value) => {
-        const candidate = normalizeNullableStrategy(value);
+        const candidate = normalizePlanProposal(value, frame);
         if (!isPlanProposal(candidate, frame)) {
           throw new ControllerReasonerError("OpenAI returned an invalid plan proposal", "invalid-output:plan-proposal", false);
         }
@@ -267,7 +268,7 @@ const goalSchema = (frame: OpenAIGoalFormationFrame): Readonly<Record<string, un
   properties: {
     definitionId: { type: "string", enum: frame.availableDefinitions.map((item) => item.id) },
     definitionVersion: { type: "integer", enum: frame.availableDefinitions.map((item) => item.version) },
-    parameters: { anyOf: frame.availableDefinitions.map((item) => item.parameterSchema) },
+    parameters: { anyOf: frame.availableDefinitions.map((item) => toOpenAIProviderSchema(item.parameterSchema)) },
     motivationIds: {
       type: "array", minItems: 1,
       items: { type: "string", enum: [...new Set(frame.availableDefinitions.flatMap((item) => item.admissibleMotivations))] }
@@ -298,7 +299,7 @@ const planSchema = (frame: OpenAIPlanningFrame): Readonly<Record<string, unknown
           stepId: { type: "string", minLength: 1, maxLength: 100 },
           capabilityId: { type: "string", enum: [capability.id] },
           capabilityVersion: { type: "integer", enum: [capability.version] },
-          parameters: capability.parameterSchema,
+          parameters: toOpenAIProviderSchema(capability.parameterSchema),
           target: {
             anyOf: [
               { type: "null" },
@@ -348,15 +349,83 @@ const isPlanProposal = (value: unknown, frame: OpenAIPlanningFrame): value is Op
   Array.isArray(value["successConditionRefs"]) && Array.isArray(value["failureConditionRefs"]) &&
   Array.isArray(value["acknowledgedObligationIds"]) && typeof value["reasonCode"] === "string";
 
-const normalizeNullableStrategy = (value: unknown): unknown => {
+const normalizeGoalProposal = (value: unknown, frame: OpenAIGoalFormationFrame): unknown => {
+  if (!isRecord(value)) return value;
+  const definition = frame.availableDefinitions.find((item) => item.id === value["definitionId"]);
+  if (definition === undefined) return value;
+  return { ...value, parameters: normalizeProviderValue(value["parameters"], definition.parameterSchema) };
+};
+
+const normalizePlanProposal = (value: unknown, frame: OpenAIPlanningFrame): unknown => {
   if (!isRecord(value)) return value;
   const normalizedSteps = Array.isArray(value["steps"])
-    ? value["steps"].map((step) => isRecord(step) && step["target"] === null
-      ? Object.fromEntries(Object.entries(step).filter(([key]) => key !== "target"))
-      : step)
+    ? value["steps"].map((step) => {
+      if (!isRecord(step)) return step;
+      const capability = frame.capabilities.find((item) => item.id === step["capabilityId"]);
+      const entries = Object.entries(step).filter(([key, item]) => !(key === "target" && item === null));
+      return {
+        ...Object.fromEntries(entries),
+        parameters: capability === undefined
+          ? step["parameters"]
+          : normalizeProviderValue(step["parameters"], capability.parameterSchema)
+      };
+    })
     : value["steps"];
   const entries = Object.entries(value).filter(([key, item]) => !(key === "strategyId" && item === null));
   return { ...Object.fromEntries(entries), steps: normalizedSteps };
+};
+
+const toOpenAIProviderSchema = (schema: Readonly<Record<string, unknown>>): Readonly<Record<string, unknown>> => {
+  const converted: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(schema)) {
+    if (["properties", "required", "additionalProperties", "items", "anyOf", "const", "uniqueItems"].includes(key)) continue;
+    converted[key] = value;
+  }
+  if ("const" in schema) converted["enum"] = [schema["const"]];
+  if (Array.isArray(schema["anyOf"])) {
+    converted["anyOf"] = schema["anyOf"].map((item) => isRecord(item) ? toOpenAIProviderSchema(item) : item);
+  }
+  if (isRecord(schema["items"])) converted["items"] = toOpenAIProviderSchema(schema["items"]);
+  if (schema["type"] === "object") {
+    const properties = isRecord(schema["properties"]) ? schema["properties"] : {};
+    const originallyRequired = new Set(Array.isArray(schema["required"])
+      ? schema["required"].filter((item): item is string => typeof item === "string")
+      : []);
+    converted["properties"] = Object.fromEntries(Object.entries(properties).map(([key, value]) => {
+      if (!isRecord(value)) return [key, value];
+      const propertySchema = toOpenAIProviderSchema(value);
+      return [key, originallyRequired.has(key) ? propertySchema : makeNullable(propertySchema)];
+    }));
+    converted["required"] = Object.keys(properties);
+    converted["additionalProperties"] = false;
+  }
+  return converted;
+};
+
+const makeNullable = (schema: Readonly<Record<string, unknown>>): Readonly<Record<string, unknown>> => {
+  if (schema["type"] === "null") return schema;
+  if (Array.isArray(schema["anyOf"]) && schema["anyOf"].some((item) => isRecord(item) && item["type"] === "null")) {
+    return schema;
+  }
+  return { anyOf: [schema, { type: "null" }] };
+};
+
+const normalizeProviderValue = (value: unknown, schema: Readonly<Record<string, unknown>>): unknown => {
+  if (schema["type"] === "object" && isRecord(value)) {
+    const properties = isRecord(schema["properties"]) ? schema["properties"] : {};
+    const required = new Set(Array.isArray(schema["required"])
+      ? schema["required"].filter((item): item is string => typeof item === "string")
+      : []);
+    return Object.fromEntries(Object.entries(value).flatMap(([key, item]) => {
+      const propertySchema = properties[key];
+      if (!required.has(key) && item === null) return [];
+      return [[key, isRecord(propertySchema) ? normalizeProviderValue(item, propertySchema) : item]];
+    }));
+  }
+  if (schema["type"] === "array" && Array.isArray(value) && isRecord(schema["items"])) {
+    return value.map((item) => normalizeProviderValue(item, schema["items"] as Readonly<Record<string, unknown>>));
+  }
+  return value;
 };
 
 const extractOutputText = (raw: Readonly<Record<string, unknown>>): string => {

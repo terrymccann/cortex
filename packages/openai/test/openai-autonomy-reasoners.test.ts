@@ -12,6 +12,22 @@ const response = (output: unknown) => new Response(JSON.stringify({
   usage: { input_tokens: 80, output_tokens: 30, total_tokens: 110 }
 }), { status: 200, headers: { "content-type": "application/json" } });
 
+const expectStrictObjectSchemas = (value: unknown): void => {
+  if (Array.isArray(value)) {
+    value.forEach(expectStrictObjectSchemas);
+    return;
+  }
+  if (typeof value !== "object" || value === null) return;
+  const record = value as Readonly<Record<string, unknown>>;
+  if (record["type"] === "object") {
+    const properties = record["properties"] as Readonly<Record<string, unknown>>;
+    expect(properties).toBeTypeOf("object");
+    expect(record["required"]).toEqual(Object.keys(properties));
+    expect(record["additionalProperties"]).toBe(false);
+  }
+  Object.values(record).forEach(expectStrictObjectSchemas);
+};
+
 const goalFrame = (): GoalFormationFrame => ({
   schemaVersion: "cortex-goal-formation-frame-v1", frameId: "agent:goal:risk:v1",
   agentId: asAgentId("agent"), basedOnVersion: 1,
@@ -45,7 +61,9 @@ const planningFrame = (): PlanningFrame => ({
   },
   capabilities: [{
     id: "test:withdraw", version: 1, description: "Withdraw",
-    parameterSchema: { type: "object", additionalProperties: false },
+    parameterSchema: {
+      type: "object", properties: { note: { type: "string" } }, additionalProperties: false
+    },
     targetTypes: [], supportedGoals: ["test:preserve"], requirements: [], risks: [],
     potentialEffects: ["test:safe"], actionIds: ["test:retreat"],
     planningCost: { effort: 0.2, risk: 0.1 }, incompatibleWith: []
@@ -75,6 +93,7 @@ describe("OpenAI autonomy reasoners", () => {
     expect(JSON.stringify(body["text"])).toContain('"strict":true');
     expect(JSON.stringify(body["text"])).not.toContain('"uniqueItems"');
     expect(JSON.stringify(body["text"])).not.toContain('"const"');
+    expectStrictObjectSchemas(body["text"]);
     expect(audit).toMatchObject([{ reasonerKind: "goal", usage: { totalTokens: 110 } }]);
   });
 
@@ -86,7 +105,7 @@ describe("OpenAI autonomy reasoners", () => {
         return response({
           goalId: "goal:preserve", strategyId: null,
           steps: [{ stepId: "withdraw", capabilityId: "test:withdraw", capabilityVersion: 1,
-            parameters: {}, target: null, dependsOn: [], optional: false }],
+          parameters: { note: null }, target: null, dependsOn: [], optional: false }],
           successConditionRefs: ["test:safe"], failureConditionRefs: [],
           acknowledgedObligationIds: [], reasonCode: "test:reduce-risk"
         });
@@ -101,6 +120,10 @@ describe("OpenAI autonomy reasoners", () => {
     });
     expect(JSON.stringify(body["text"])).not.toContain('"uniqueItems"');
     expect(JSON.stringify(body["text"])).not.toContain('"const"');
+    expectStrictObjectSchemas(body["text"]);
+    expect(JSON.stringify(body["text"])).toContain(
+      '"parameters":{"type":"object","properties":{"note":{"anyOf":[{"type":"string"},{"type":"null"}]}},"required":["note"],"additionalProperties":false}'
+    );
   });
 
   it("records structurally invalid autonomy output as a validation error", async () => {
