@@ -5,7 +5,7 @@ export type JsonSchema = Readonly<Record<string, unknown>>;
 
 export const CORTEX_DOMAIN_MANIFEST_SCHEMA_V1 = "cortex-domain-manifest-v1" as const;
 export const CORTEX_DOMAIN_MANIFEST_TARGET_SCHEMA_V2 = "cortex-domain-manifest-v2" as const;
-export const CORTEX_DOMAIN_MANIFEST_CURRENT_SCHEMA = CORTEX_DOMAIN_MANIFEST_SCHEMA_V1;
+export const CORTEX_DOMAIN_MANIFEST_CURRENT_SCHEMA = CORTEX_DOMAIN_MANIFEST_TARGET_SCHEMA_V2;
 
 export type Sha256Fingerprint = `sha256:${string}`;
 
@@ -71,6 +71,24 @@ export interface MotivationDefinition extends VersionedDefinition {
   readonly maximum: number;
 }
 
+export interface ConditionTemplate {
+  readonly definitionId: NamespacedId;
+  readonly definitionVersion: number;
+  readonly subjectType?: NamespacedId;
+  readonly parameters: Readonly<Record<string, unknown>>;
+}
+
+export interface GoalDefinition extends VersionedDefinition {
+  readonly parameterSchema: JsonSchema;
+  readonly entityParameters: Readonly<Record<string, NamespacedId>>;
+  readonly admissibleMotivations: readonly NamespacedId[];
+  readonly successCondition: ConditionTemplate;
+  readonly failureConditions: readonly ConditionTemplate[];
+  readonly relevantCapabilities: readonly NamespacedId[];
+  readonly defaultHorizon: "immediate" | "short" | "medium";
+  readonly conflictTags: readonly NamespacedId[];
+}
+
 export interface GameDomain {
   readonly id: NamespacedId;
   readonly version: string;
@@ -83,6 +101,7 @@ export interface GameDomain {
   readonly resources: readonly ResourceDefinition[];
   readonly relationshipDimensions: readonly RelationshipDimensionDefinition[];
   readonly motivations: readonly MotivationDefinition[];
+  readonly goals: readonly GoalDefinition[];
   readonly tags: readonly SemanticTag[];
 }
 
@@ -91,7 +110,7 @@ export const fingerprintManifest = (value: unknown): Sha256Fingerprint =>
 
 export const fingerprintGameDomain = (domain: GameDomain): Sha256Fingerprint =>
   fingerprintManifest({
-    schemaVersion: CORTEX_DOMAIN_MANIFEST_SCHEMA_V1,
+    schemaVersion: CORTEX_DOMAIN_MANIFEST_CURRENT_SCHEMA,
     domain
   });
 
@@ -104,6 +123,7 @@ export type DomainDefinition =
   | ResourceDefinition
   | RelationshipDimensionDefinition
   | MotivationDefinition
+  | GoalDefinition
   | SemanticTag;
 
 export class DomainValidationError extends Error {
@@ -166,11 +186,28 @@ export class DomainRegistry {
     return action === undefined ? undefined : structuredClone(action);
   }
 
+  goal(id: NamespacedId): Readonly<GoalDefinition> | undefined {
+    const goal = [...this.#domains.values()]
+      .flatMap((domain) => domain.goals)
+      .find((candidate) => candidate.id === id);
+    return goal === undefined ? undefined : structuredClone(goal);
+  }
+
+  goals(): readonly Readonly<GoalDefinition>[] {
+    return [...this.#domains.values()]
+      .flatMap((domain) => domain.goals)
+      .map((goal) => structuredClone(goal))
+      .sort((left, right) => left.id.localeCompare(right.id));
+  }
+
   private validateDomain(domain: GameDomain): void {
     this.assertId(domain.id, "domain");
     if (domain.version.trim().length === 0) throw new DomainValidationError("Domain version is required");
     if (domain.cortexSdkRange.trim().length === 0) {
       throw new DomainValidationError("Cortex SDK compatibility range is required");
+    }
+    if (!Array.isArray((domain as Partial<GameDomain>).goals)) {
+      throw new DomainValidationError("Domain manifest v2 requires an explicit goals array");
     }
 
     const definitions = this.definitionsOf(domain);
@@ -194,6 +231,7 @@ export class DomainRegistry {
     const tagIds = new Set(domain.tags.map((tag) => tag.id));
     const constraintIds = new Set(domain.constraints.map((constraint) => constraint.id));
     const effectIds = new Set(domain.effects.map((effect) => effect.id));
+    const effects = new Map(domain.effects.map((effect) => [effect.id, effect]));
     for (const action of domain.actions) {
       this.assertRegisteredTag(action.category, tagIds, `action category for ${action.id}`);
       this.assertId(action.skillId, `skill for ${action.id}`);
@@ -262,6 +300,55 @@ export class DomainRegistry {
         throw new DomainValidationError(`Invalid motivation range: ${motivation.id}`);
       }
     }
+    for (const goal of domain.goals) {
+      if (!isObjectSchema(goal.parameterSchema)) {
+        throw new DomainValidationError(`Goal parameter schema must describe an object: ${goal.id}`);
+      }
+      if (goal.admissibleMotivations.length === 0) {
+        throw new DomainValidationError(`Goal has no admissible motivations: ${goal.id}`);
+      }
+      const goalProperties = isRecord(goal.parameterSchema["properties"])
+        ? goal.parameterSchema["properties"]
+        : {};
+      for (const [parameter, entityType] of Object.entries(goal.entityParameters)) {
+        if (goalProperties[parameter] === undefined) {
+          throw new DomainValidationError(`Unknown entity parameter ${parameter} in goal ${goal.id}`);
+        }
+        if (!entityIds.has(entityType)) {
+          throw new DomainValidationError(`Unknown entity type ${entityType} in goal ${goal.id}`);
+        }
+      }
+      for (const motivationId of goal.admissibleMotivations) {
+        if (!motivationIds.has(motivationId)) {
+          throw new DomainValidationError(`Unknown motivation ${motivationId} in goal ${goal.id}`);
+        }
+      }
+      for (const condition of [goal.successCondition, ...goal.failureConditions]) {
+        const effect = effects.get(condition.definitionId);
+        if (!effect || effect.version !== condition.definitionVersion) {
+          throw new DomainValidationError(
+            `Unknown condition ${condition.definitionId}@${condition.definitionVersion} in goal ${goal.id}`
+          );
+        }
+        if (!validateJsonSchema(effect.parameterSchema, condition.parameters)) {
+          throw new DomainValidationError(`Invalid condition parameters in goal ${goal.id}`);
+        }
+        if (condition.subjectType !== undefined && !effect.subjectTypes.includes(condition.subjectType)) {
+          throw new DomainValidationError(
+            `Invalid condition subject type ${condition.subjectType} in goal ${goal.id}`
+          );
+        }
+      }
+      if (goal.relevantCapabilities.length === 0) {
+        throw new DomainValidationError(`Goal has no relevant capabilities: ${goal.id}`);
+      }
+      for (const capabilityId of goal.relevantCapabilities) {
+        this.assertId(capabilityId, `capability reference for ${goal.id}`);
+      }
+      for (const tag of goal.conflictTags) {
+        this.assertRegisteredTag(tag, tagIds, `conflict tag for ${goal.id}`);
+      }
+    }
   }
 
   private definitionsOf(domain: GameDomain): readonly DomainDefinition[] {
@@ -274,6 +361,7 @@ export class DomainRegistry {
       ...domain.resources,
       ...domain.relationshipDimensions,
       ...domain.motivations,
+      ...domain.goals,
       ...domain.tags
     ];
   }
@@ -302,6 +390,36 @@ export class DomainRegistry {
     if (!definitionIds.has(value)) throw new DomainValidationError(`Unknown ${label}: ${value}`);
   }
 }
+
+export const validateJsonSchema = (schema: JsonSchema, value: unknown): boolean => {
+  const expectedType = schema["type"];
+  if (expectedType === "object") {
+    if (!isRecord(value)) return false;
+    const required = schema["required"];
+    if (Array.isArray(required) && required.some((key) => typeof key !== "string" || value[key] === undefined)) {
+      return false;
+    }
+    const properties = isRecord(schema["properties"]) ? schema["properties"] : {};
+    if (schema["additionalProperties"] === false && Object.keys(value).some((key) => properties[key] === undefined)) {
+      return false;
+    }
+    return Object.entries(properties).every(([key, propertySchema]) =>
+      value[key] === undefined || (isRecord(propertySchema) && validateJsonSchema(propertySchema, value[key]))
+    );
+  }
+  if (expectedType === "array") {
+    if (!Array.isArray(value)) return false;
+    const items = schema["items"];
+    return items === undefined || (isRecord(items) && value.every((item) => validateJsonSchema(items, item)));
+  }
+  if (expectedType === "string") return typeof value === "string";
+  if (expectedType === "number") return typeof value === "number" && Number.isFinite(value);
+  if (expectedType === "integer") return typeof value === "number" && Number.isInteger(value);
+  if (expectedType === "boolean") return typeof value === "boolean";
+  return expectedType === undefined;
+};
+
+const isObjectSchema = (schema: JsonSchema): boolean => schema["type"] === "object";
 
 const canonicalJson = (value: unknown): string => {
   if (value === null || typeof value === "boolean" || typeof value === "string") {

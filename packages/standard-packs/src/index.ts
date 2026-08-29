@@ -4,7 +4,6 @@ import {
   type EntityRef,
   type EventId,
   type FeasibleIntention,
-  type GoalId,
   type MemoryId,
   type NamespacedId,
   type SimTime
@@ -19,6 +18,9 @@ import type {
   StateSliceState
 } from "@cortex/runtime";
 import type { CortexPack } from "@cortex/sdk";
+import { goalsPack } from "./goals.js";
+
+export * from "./goals.js";
 
 export const STANDARD_SLICE_IDS = {
   traits: "cortex-traits:state",
@@ -61,14 +63,6 @@ export interface Relationship {
   readonly familiarity: number;
 }
 
-export interface Goal {
-  readonly id: GoalId;
-  readonly kind: string;
-  readonly description: string;
-  readonly priority: number;
-  readonly status: "active" | "suspended" | "satisfied" | "abandoned";
-}
-
 export interface PlanState {
   readonly id: string;
   readonly status: "created" | "invalidated";
@@ -96,20 +90,12 @@ export interface SocialState {
   readonly relationships: readonly Relationship[];
 }
 
-export interface GoalsState {
-  readonly goals: readonly Goal[];
-}
-
 export interface PlanningState {
   readonly activePlan?: PlanState;
 }
 
 export interface ConversationState {
   readonly lastCommunication?: CommunicationRecord;
-}
-
-export interface GoalManagerPort {
-  upsert(agentId: AgentId, goals: readonly Goal[], now: SimTime): Promise<PatchApplyResult>;
 }
 
 export interface PlanningManagerPort {
@@ -164,14 +150,6 @@ const socialReducer = reducer<SocialState, { readonly deltas: readonly SocialRel
   reduce: (current, operation) => ({
     relationships: updateRelationships(current.relationships, operation.deltas)
   })
-});
-
-const goalsReducer = reducer<GoalsState, { readonly upsert: readonly Goal[] }>({
-  sliceId: STANDARD_SLICE_IDS.goals,
-  writerModules: ["cortex-goals:manager"],
-  initial: { goals: [] },
-  validate: isGoalsState,
-  reduce: (current, operation) => ({ goals: upsertById(current.goals, operation.upsert) })
 });
 
 const planningReducer = reducer<
@@ -257,18 +235,6 @@ export const socialPack: CortexPack = pack({
         }
       }
     ]
-});
-
-export const goalsPack: CortexPack = pack({
-  id: "cortex:goals",
-  reducer: goalsReducer,
-  moduleId: "cortex-goals:manager",
-  frameContributors: [
-    frameContributor("cortex:goals", "cortex-goals:active", STANDARD_SLICE_IDS.goals, 8192, (state) =>
-      sliceValue<GoalsState>(state, STANDARD_SLICE_IDS.goals).goals
-        .filter((goal) => goal.status === "active")
-        .slice(0, 5), 5)
-  ]
 });
 
 export const planningPack: CortexPack = pack({
@@ -588,19 +554,6 @@ function isSocialState(value: unknown): value is SocialState {
         typeof relationship["target"] === "string" &&
         ["trust", "affection", "respect", "fear", "attraction", "resentment", "familiarity"]
           .every((key) => isFiniteNumber(relationship[key]))
-    );
-}
-function isGoalsState(value: unknown): value is GoalsState {
-  return isRecord(value) &&
-    Array.isArray(value["goals"]) &&
-    value["goals"].every(
-      (goal) =>
-        isRecord(goal) &&
-        typeof goal["id"] === "string" &&
-        typeof goal["kind"] === "string" &&
-        typeof goal["description"] === "string" &&
-        isFiniteNumber(goal["priority"]) &&
-        ["active", "suspended", "satisfied", "abandoned"].includes(String(goal["status"]))
     );
 }
 function isPlanningState(value: unknown): value is PlanningState {

@@ -110,17 +110,27 @@ describe("Marcus/Elena grounded vertical slice", () => {
         },
         slices: {
           ...packs.initialSlices(),
-          [STANDARD_SLICE_IDS.goals]: sliceState({
-            goals: [
-              {
-                id: asGoalId("protect-council"),
-                kind: "protect",
-                description: "Protect the council from political violence",
-                priority: 0.95,
-                status: "active"
-              }
-            ]
-          }),
+          [STANDARD_SLICE_IDS.goals]: {
+            schemaVersion: 2,
+            value: {
+              goals: [
+                {
+                  id: asGoalId("protect-council"),
+                  definitionId: "social:protect-council",
+                  definitionVersion: 1,
+                  parameters: { councilId: "city-council" },
+                  motivationIds: ["social:protect-community"],
+                  evidenceRefs: [],
+                  priority: 0.95,
+                  horizon: "short",
+                  status: "active",
+                  createdAt: asSimTime(0),
+                  basedOnVersion: 0,
+                  source: "designer-seed"
+                }
+              ]
+            }
+          },
           [STANDARD_SLICE_IDS.social]: sliceState({
             relationships: [
               {

@@ -12,6 +12,7 @@
   "files": ["dist"],
   "dependencies": {
     "@cortex/contracts": "workspace:*",
+    "@cortex/domain": "workspace:*",
     "@cortex/runtime": "workspace:*",
     "@cortex/sdk": "workspace:*"
   }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  CORTEX_DOMAIN_MANIFEST_SCHEMA_V1,
+  CORTEX_DOMAIN_MANIFEST_CURRENT_SCHEMA,
   DomainRegistry,
   DomainValidationError,
   fingerprintGameDomain,
@@ -72,6 +72,31 @@ const droneDomain: GameDomain = {
   ],
   resources: [],
   relationshipDimensions: [],
+  goals: [
+    {
+      id: "drone:preserve-unit",
+      version: 1,
+      description: "Preserve the reconnaissance unit",
+      parameterSchema: {
+        type: "object",
+        properties: { unitId: { type: "string" } },
+        required: ["unitId"],
+        additionalProperties: false
+      },
+      entityParameters: { unitId: "drone:unit" },
+      admissibleMotivations: ["drone:mission-completion"],
+      successCondition: {
+        definitionId: "drone:survival",
+        definitionVersion: 1,
+        subjectType: "drone:unit",
+        parameters: {}
+      },
+      failureConditions: [],
+      relevantCapabilities: ["drone:withdraw"],
+      defaultHorizon: "short",
+      conflictTags: ["drone:survival-risk"]
+    }
+  ],
   tags: [
     { id: "drone:mobile", version: 1, description: "Can change position" },
     { id: "drone:movement", version: 1, description: "Movement action" },
@@ -104,6 +129,14 @@ describe("DomainRegistry", () => {
     const registry = new DomainRegistry();
     expect(() => registry.register({ ...droneDomain, id: "drone" as never })).toThrow(
       "Invalid namespaced domain id"
+    );
+  });
+
+  it("fails legacy manifests clearly when the v2 goals collection is absent", () => {
+    const legacy = { ...droneDomain } as Partial<GameDomain>;
+    delete legacy.goals;
+    expect(() => new DomainRegistry().register(legacy as GameDomain)).toThrow(
+      "Domain manifest v2 requires an explicit goals array"
     );
   });
 
@@ -147,11 +180,35 @@ describe("DomainRegistry", () => {
     expect(() => registry.register(invalid)).toThrow("Unknown subject type");
   });
 
+  it("registers grounded goal definitions and rejects invalid semantic references", () => {
+    const registry = new DomainRegistry();
+    registry.register(droneDomain);
+    expect(registry.goal("drone:preserve-unit")?.defaultHorizon).toBe("short");
+
+    expect(() => new DomainRegistry().register({
+      ...droneDomain,
+      goals: [{
+        ...droneDomain.goals[0]!,
+        admissibleMotivations: ["drone:unknown-motivation"]
+      }]
+    })).toThrow("Unknown motivation");
+    expect(() => new DomainRegistry().register({
+      ...droneDomain,
+      goals: [{
+        ...droneDomain.goals[0]!,
+        successCondition: {
+          ...droneDomain.goals[0]!.successCondition,
+          definitionVersion: 2
+        }
+      }]
+    })).toThrow("Unknown condition");
+  });
+
   it("fingerprints manifest content canonically and includes its schema", () => {
     expect(fingerprintManifest({ b: 2, a: 1 })).toBe(fingerprintManifest({ a: 1, b: 2 }));
     expect(fingerprintGameDomain(droneDomain)).toMatch(/^sha256:[a-f0-9]{64}$/);
     expect(
-      fingerprintManifest({ schemaVersion: CORTEX_DOMAIN_MANIFEST_SCHEMA_V1, domain: droneDomain })
+      fingerprintManifest({ schemaVersion: CORTEX_DOMAIN_MANIFEST_CURRENT_SCHEMA, domain: droneDomain })
     ).toBe(fingerprintGameDomain(droneDomain));
     expect(fingerprintGameDomain({ ...droneDomain, version: "1.0.1" })).not.toBe(
       fingerprintGameDomain(droneDomain)
