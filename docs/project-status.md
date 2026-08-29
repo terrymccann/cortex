@@ -9,9 +9,9 @@ delivery progress rather than token, API, or model usage.
 
 **Current milestone:** Phase 3.2 — Living Story Runtime
 
-**Status:** Implementation complete in the separate `cortex-living-story` repository; authenticated live baseline acceptance pending
+**Status:** Complete; authenticated Phase 3.2 live baseline accepted and frozen in the separate `cortex-living-story` repository
 
-**Next step:** Run and review the bounded Slice E live proof, then explicitly freeze the accepted Phase 3.2 baseline
+**Next step:** Review the Phase 3.2 exit artifacts and scope the next product milestone
 
 ## Milestones
 
@@ -22,7 +22,7 @@ delivery progress rather than token, API, or model usage.
 | Phase 2 — Live runtime and replay | Complete | Live provider execution, obligations, audit output, and zero-model deterministic replay proven |
 | Phase 3.0 — Core Generalization | Complete | Scenario-agnostic public contracts, composable state and frames, standard packs, and cross-domain conformance |
 | Phase 3.1 — Bounded Emergent Autonomy | Complete | Goal formation, capability planning, outcome-driven coordination, replay, inspection, and accepted behavioral baseline |
-| Phase 3.2 — Living Story Runtime | In progress | Text-first ensemble simulation, story threads, narrative direction, prose rendering, Character Codex, reader modes, and replay |
+| Phase 3.2 — Living Story Runtime | Complete | Text-first ensemble simulation, Cortex character trajectories, story threads, grounded prose, reader modes, exact replay, behavioral evaluation, and an accepted live baseline |
 
 ## Phase 3.2 delivery slices
 
@@ -32,7 +32,7 @@ delivery progress rather than token, API, or model usage.
 | B | Complete | Bounded story actions, dialogue, and observer projections |
 | C | Complete | Ensemble scheduling, scenes, and story-thread orchestration |
 | D | Complete | Narrative Director, grounded prose renderer, immutable style editions, and local reader experience |
-| E | Awaiting live acceptance | Replay, evaluation, inspection, live-provider proof path, and deterministic candidate baseline implemented |
+| E | Complete | Exact replay, evaluation, inspection, clean-room product proof, and accepted live baseline |
 
 ## Status convention
 
