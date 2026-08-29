@@ -708,7 +708,7 @@ Implementation proceeds in bounded slices.
 - commit plan and step state; and
 - add fallback and no-plan behavior.
 
-### Slice C — Coordination, outcomes, and replanning
+### Slice C — Coordination, outcomes, and replanning (complete)
 
 - map available steps to authoritative feasible intentions;
 - implement strict, adaptive, and advisory coordination modes;

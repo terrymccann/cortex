@@ -44,6 +44,9 @@ Implemented Slice A and Slice B boundaries are recorded in
 [docs/phase-3.1-slice-a-goal-manager.md](docs/phase-3.1-slice-a-goal-manager.md)
 and
 [docs/phase-3.1-slice-b-planning.md](docs/phase-3.1-slice-b-planning.md).
+Slice C coordination, authoritative outcome advancement, and bounded recovery
+are recorded in
+[docs/phase-3.1-slice-c-coordination.md](docs/phase-3.1-slice-c-coordination.md).
 
 The first implementation milestone is a deterministic, in-memory vertical slice.
 PostgreSQL, pgvector, Redis, BullMQ, a visual client, and a narrative Director are

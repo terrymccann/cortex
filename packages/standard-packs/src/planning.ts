@@ -1,7 +1,11 @@
 import {
+  type ActionId,
+  type ActionSubmission,
   type AgentId,
+  type DecisionId,
   type EntityRef,
   type EventId,
+  type FeasibleIntention,
   type GoalId,
   type NamespacedId,
   type SimTime
@@ -19,6 +23,10 @@ import {
   type AgentStateStore,
   type CognitiveFrameContributor,
   type CognitiveFrameSection,
+  type DecisionObligation,
+  type IntentionCoordinator,
+  type IntentionCoordinationInput,
+  type IntentionCoordinationResult,
   type PatchEnvelope,
   type StateSliceReducer
 } from "@cortex/runtime";
@@ -54,6 +62,11 @@ export interface PlanProposal {
 
 export interface PlanStep extends PlanProposalStep {
   readonly status: PlanStepStatus;
+  readonly attempts?: number;
+  readonly committedDecisionId?: DecisionId;
+  readonly actionId?: ActionId;
+  readonly outcomeEventIds?: readonly EventId[];
+  readonly statusReason?: NamespacedId;
 }
 
 export interface Plan {
@@ -69,11 +82,30 @@ export interface Plan {
   readonly createdAt: SimTime;
   readonly basedOnVersion: number;
   readonly source: PlanSource;
+  readonly updatedAt?: SimTime;
+  readonly statusReason?: NamespacedId;
 }
 
 export interface PlanningState {
   readonly activePlan?: Plan;
+  readonly recentPlans?: readonly Plan[];
+  readonly replacementPlanCounts?: Readonly<Record<string, number>>;
+  readonly escalations?: readonly PlanEscalation[];
 }
+
+export interface PlanEscalation {
+  readonly id: string;
+  readonly goalId: GoalId;
+  readonly planId?: string;
+  readonly reason: PlanEscalationReason;
+  readonly obligationIds: readonly string[];
+  readonly createdAt: SimTime;
+}
+
+export type PlanEscalationReason =
+  | "replacement-limit-reached"
+  | "obligation-unfulfillable"
+  | "plan-policy-conflict";
 
 export interface PlanningFrame {
   readonly schemaVersion: "cortex-planning-frame-v1";
@@ -168,7 +200,15 @@ const defaultPolicy: PlanningPolicy = {
   protectedCapabilities: []
 };
 
-type PlanningOperation = { readonly kind: "commit"; readonly plan: Plan };
+type PlanningOperation =
+  | { readonly kind: "commit"; readonly plan: Plan }
+  | { readonly kind: "commit-step"; readonly planId: string; readonly stepId: string; readonly decisionId: DecisionId; readonly now: SimTime }
+  | { readonly kind: "action-submitted"; readonly planId: string; readonly stepId: string; readonly actionId: ActionId; readonly now: SimTime }
+  | { readonly kind: "resolve-step"; readonly planId: string; readonly stepId: string; readonly outcome: "succeeded" | "failed"; readonly eventIds: readonly EventId[]; readonly reason: NamespacedId; readonly now: SimTime }
+  | { readonly kind: "block-plan"; readonly planId: string; readonly reason: NamespacedId; readonly now: SimTime }
+  | { readonly kind: "retry-step"; readonly planId: string; readonly stepId: string; readonly now: SimTime }
+  | { readonly kind: "archive-for-replan"; readonly planId: string; readonly now: SimTime }
+  | { readonly kind: "escalate"; readonly escalation: PlanEscalation };
 
 export const planningReducer: StateSliceReducer = {
   sliceId: PLANNING_SLICE_ID,
@@ -179,23 +219,86 @@ export const planningReducer: StateSliceReducer = {
   reduce: (current, operation): PlanningState => {
     const state = current as PlanningState;
     const command = operation as PlanningOperation;
-    if (command.kind !== "commit" || state.activePlan || !isPlan(command.plan)) {
-      throw new Error("Invalid plan commitment");
+    if (command.kind === "commit") {
+      if ((state.activePlan?.status === "active" || state.activePlan?.status === "blocked") ||
+        !isPlan(command.plan) || command.plan.status !== "active") {
+        throw new Error("Invalid plan commitment");
+      }
+      return {
+        ...state,
+        activePlan: command.plan,
+        ...(state.activePlan === undefined ? {} : {
+          recentPlans: [...(state.recentPlans ?? []), state.activePlan].slice(-8)
+        })
+      };
     }
-    return { activePlan: command.plan };
+    if (command.kind === "escalate") {
+      return { ...state, escalations: [...(state.escalations ?? []), command.escalation].slice(-16) };
+    }
+    const plan = state.activePlan;
+    if (!plan || plan.id !== command.planId) throw new Error("Unknown active plan");
+    if (command.kind === "commit-step") {
+      const step = plan.steps.find((candidate) => candidate.stepId === command.stepId);
+      if (plan.status !== "active" || step?.status !== "available") throw new Error("Step is not available");
+      return withPlan(state, { ...updateStep(plan, command.stepId, {
+        status: "committed", attempts: (step.attempts ?? 0) + 1,
+        committedDecisionId: command.decisionId, outcomeEventIds: []
+      }), updatedAt: command.now });
+    }
+    if (command.kind === "action-submitted") {
+      const step = plan.steps.find((candidate) => candidate.stepId === command.stepId);
+      if (step?.status !== "committed" || step.committedDecisionId === undefined) throw new Error("Step has no committed decision");
+      return withPlan(state, { ...updateStep(plan, command.stepId, { actionId: command.actionId }), updatedAt: command.now });
+    }
+    if (command.kind === "resolve-step") {
+      const step = plan.steps.find((candidate) => candidate.stepId === command.stepId);
+      if (step?.status !== "committed") throw new Error("Step is not committed");
+      return withPlan(state, resolveStep(plan, command));
+    }
+    if (command.kind === "block-plan") {
+      if (plan.status !== "active") throw new Error("Plan is not active");
+      return withPlan(state, { ...plan, status: "blocked", statusReason: command.reason, updatedAt: command.now });
+    }
+    if (command.kind === "retry-step") {
+      const step = plan.steps.find((candidate) => candidate.stepId === command.stepId);
+      if (plan.status !== "blocked" || step?.status !== "failed") throw new Error("Step cannot be retried");
+      const { statusReason: _planReason, ...planWithoutReason } = plan;
+      const retried = updateStep({ ...planWithoutReason, status: "active" }, command.stepId, {
+        status: "available", outcomeEventIds: []
+      });
+      return withPlan(state, { ...retried, steps: retried.steps.map((candidate) => {
+        if (candidate.stepId !== command.stepId) return candidate;
+        const { committedDecisionId: _decision, actionId: _action, statusReason: _reason, ...clean } = candidate;
+        return clean;
+      }), updatedAt: command.now });
+    }
+    if (command.kind === "archive-for-replan") {
+      if (plan.status !== "blocked" && plan.status !== "invalidated") throw new Error("Plan cannot be replaced");
+      const archived = { ...plan, status: "invalidated" as const, updatedAt: command.now };
+      const { activePlan: _activePlan, ...stateWithoutActivePlan } = state;
+      return {
+        ...stateWithoutActivePlan,
+        recentPlans: [...(state.recentPlans ?? []), archived].slice(-8),
+        replacementPlanCounts: {
+          ...(state.replacementPlanCounts ?? {}),
+          [plan.goalId]: (state.replacementPlanCounts?.[plan.goalId] ?? 0) + 1
+        }
+      };
+    }
+    throw new Error("Unknown planning operation");
   }
 };
 
 export const planningPack: CortexPack = {
   id: "cortex:planning",
-  version: "2.0.0",
+  version: "2.1.0",
   cortexSdkRange: ">=0.0.0",
   dependencies: [{ packId: "cortex:goals", versionRange: "2.0.0" }],
   stateSlices: [planningReducer],
   modules: [{
     id: "cortex-planning:manager",
     cost: "reasoning-model",
-    description: "Validates and owns bounded, non-executing plans",
+    description: "Validates, coordinates, and owns bounded capability-plan lifecycle",
     readsSlices: [GOALS_SLICE_ID, PLANNING_SLICE_ID],
     writesSlices: [PLANNING_SLICE_ID]
   }],
@@ -210,6 +313,283 @@ export const planningPack: CortexPack = {
     contribute: (state) => readPlanningState(state) ?? {}
   }]
 };
+
+export type PlanCoordinationMode = "strict" | "adaptive" | "advisory";
+
+export interface PlanCoordinatorOptions {
+  readonly mode: PlanCoordinationMode;
+  readonly urgentIntentionKinds?: readonly string[];
+}
+
+export class PlanCoordinator implements IntentionCoordinator {
+  constructor(
+    private readonly domains: DomainRegistry,
+    private readonly lifecycle: PlanLifecycleManager,
+    private readonly options: PlanCoordinatorOptions
+  ) {}
+
+  async coordinate(input: IntentionCoordinationInput): Promise<IntentionCoordinationResult> {
+    const plan = readPlanningState(input.state)?.activePlan;
+    if (!plan) return { status: "eligible", intentions: input.feasibleIntentions };
+    if (input.dueObligations.length > 0) {
+      return { status: "eligible", intentions: input.feasibleIntentions };
+    }
+    if (plan.status === "blocked") return { status: "blocked", reason: "plan-blocked" };
+    if (plan.status !== "active") return { status: "eligible", intentions: input.feasibleIntentions };
+    const available = plan.steps.filter((step) => step.status === "available");
+    if (available.length === 0) {
+      return { status: "blocked", reason: plan.steps.some((step) => step.status === "committed")
+        ? "plan-awaiting-outcome"
+        : "plan-has-no-available-step" };
+    }
+    const compatible = input.feasibleIntentions.filter((intention) =>
+      available.some((step) => intentionMatchesStep(this.domains, intention, step))
+    );
+    const eligible = this.options.mode === "strict"
+      ? compatible
+      : this.options.mode === "adaptive"
+        ? uniqueIntentions([
+            ...compatible,
+            ...input.feasibleIntentions.filter((intention) => this.options.urgentIntentionKinds?.includes(intention.kind) ?? false)
+          ])
+        : input.feasibleIntentions;
+    if (eligible.length > 0) return { status: "eligible", intentions: eligible };
+    await this.lifecycle.blockPlan({
+      agentId: input.state.id,
+      reason: "cortex-planning:no-feasible-step",
+      now: input.now
+    });
+    return { status: "blocked", reason: "plan-no-feasible-step" };
+  }
+}
+
+export type PlanLifecycleResult =
+  | { readonly status: "applied"; readonly plan: Plan }
+  | { readonly status: "no-match" }
+  | { readonly status: "no-change" }
+  | { readonly status: "stale" }
+  | { readonly status: "rejected"; readonly reason: string };
+
+export class PlanLifecycleManager {
+  constructor(
+    private readonly stateStore: AgentStateStore,
+    private readonly domains: DomainRegistry
+  ) {}
+
+  async commitDecision(input: {
+    readonly agentId: AgentId;
+    readonly decisionId: DecisionId;
+    readonly intention: FeasibleIntention;
+    readonly now: SimTime;
+  }): Promise<PlanLifecycleResult> {
+    const state = await this.stateStore.snapshot(input.agentId);
+    if (state.currentDecision?.id !== input.decisionId) return { status: "rejected", reason: "decision-not-current" };
+    const plan = readPlanningState(state)?.activePlan;
+    if (!plan || plan.status !== "active") return { status: "no-match" };
+    const step = [...plan.steps]
+      .filter((candidate) => candidate.status === "available" && intentionMatchesStep(this.domains, input.intention, candidate))
+      .sort((left, right) => left.stepId.localeCompare(right.stepId))[0];
+    if (!step) return { status: "no-match" };
+    return this.apply(state, {
+      kind: "commit-step", planId: plan.id, stepId: step.stepId,
+      decisionId: input.decisionId, now: input.now
+    });
+  }
+
+  async observeSubmission(input: {
+    readonly agentId: AgentId;
+    readonly decisionId: DecisionId;
+    readonly submission: ActionSubmission;
+    readonly now: SimTime;
+  }): Promise<PlanLifecycleResult> {
+    const state = await this.stateStore.snapshot(input.agentId);
+    const plan = readPlanningState(state)?.activePlan;
+    const step = plan?.steps.find((candidate) =>
+      candidate.status === "committed" && candidate.committedDecisionId === input.decisionId
+    );
+    if (!plan || !step) return { status: "no-match" };
+    if (input.submission.status === "accepted") {
+      return this.apply(state, {
+        kind: "action-submitted", planId: plan.id, stepId: step.stepId,
+        actionId: input.submission.actionId, now: input.now
+      });
+    }
+    return this.apply(state, {
+      kind: "resolve-step", planId: plan.id, stepId: step.stepId, outcome: "failed",
+      eventIds: [], reason: input.submission.status === "deferred"
+        ? "cortex-planning:action-deferred"
+        : "cortex-planning:action-rejected",
+      now: input.now
+    });
+  }
+
+  async reconcile(input: {
+    readonly agentId: AgentId;
+    readonly now: SimTime;
+  }): Promise<PlanLifecycleResult> {
+    const state = await this.stateStore.snapshot(input.agentId);
+    const plan = readPlanningState(state)?.activePlan;
+    if (!plan) return { status: "no-change" };
+    const resolved = plan.steps
+      .filter((step) => step.status === "committed" && step.actionId !== undefined)
+      .map((step) => ({ step, expectation: state.expectations.find((item) => item.actionId === step.actionId) }))
+      .find((item) => item.expectation?.status === "succeeded" || item.expectation?.status === "failed" ||
+        (item.expectation?.status === "partially-succeeded" && item.expectation.expectedEffects.every((effect) => effect.deadline < input.now)));
+    if (!resolved?.expectation) return { status: "no-change" };
+    if (!resolved.expectation.resolutionEventIds.every((eventId) =>
+      state.perception.some((observation) => observation.eventId === eventId)
+    )) return { status: "rejected", reason: "outcome-not-grounded" };
+    return this.apply(state, {
+      kind: "resolve-step", planId: plan.id, stepId: resolved.step.stepId,
+      outcome: resolved.expectation.status === "succeeded" ? "succeeded" : "failed",
+      eventIds: resolved.expectation.resolutionEventIds,
+      reason: resolved.expectation.status === "succeeded"
+        ? "cortex-planning:effect-observed"
+        : "cortex-planning:expectation-expired",
+      now: input.now
+    }, resolved.expectation.resolutionEventIds);
+  }
+
+  async blockPlan(input: {
+    readonly agentId: AgentId;
+    readonly reason: NamespacedId;
+    readonly now: SimTime;
+  }): Promise<PlanLifecycleResult> {
+    const state = await this.stateStore.snapshot(input.agentId);
+    const plan = readPlanningState(state)?.activePlan;
+    if (!plan || plan.status !== "active") return { status: "no-change" };
+    return this.apply(state, { kind: "block-plan", planId: plan.id, reason: input.reason, now: input.now });
+  }
+
+  private async apply(
+    state: Readonly<AgentState>,
+    operation: PlanningOperation,
+    triggeredBy: readonly EventId[] = []
+  ): Promise<PlanLifecycleResult> {
+    const now = operationTime(operation);
+    const key = `planning:${state.id}:${operation.kind}:v${state.version}`;
+    const applied = await this.stateStore.apply({
+      patchId: key, agentId: state.id, module: "cortex-planning:manager",
+      basedOnVersion: state.version, worldVersion: 0, observedThroughSequence: 0,
+      triggeredBy, idempotencyKey: key, rebasePolicy: "never", createdAt: now,
+      patch: { kind: "state-slice", sliceId: PLANNING_SLICE_ID, operation }
+    });
+    if (applied.status !== "applied") return { status: "stale" };
+    const plan = readPlanningState(await this.stateStore.snapshot(state.id))?.activePlan;
+    return plan ? { status: "applied", plan } : { status: "no-change" };
+  }
+}
+
+export interface PlanRecoveryPolicy {
+  readonly maxRetriesPerStep: number;
+  readonly maxReplacementPlans: number;
+  readonly maxPlanAge: number;
+}
+
+const defaultRecoveryPolicy: PlanRecoveryPolicy = {
+  maxRetriesPerStep: 1,
+  maxReplacementPlans: 2,
+  maxPlanAge: 100
+};
+
+export type PlanRecoveryResult =
+  | { readonly status: "retry-ready"; readonly plan: Plan }
+  | { readonly status: "replacement-ready"; readonly goalId: GoalId }
+  | { readonly status: "escalated"; readonly escalation: PlanEscalation }
+  | { readonly status: "blocked"; readonly plan: Plan }
+  | { readonly status: "not-needed" }
+  | { readonly status: "rejected"; readonly reason: string }
+  | { readonly status: "stale" };
+
+export class PlanRecoveryManager {
+  readonly #policy: PlanRecoveryPolicy;
+  constructor(
+    private readonly stateStore: AgentStateStore,
+    options: Partial<PlanRecoveryPolicy> = {}
+  ) {
+    this.#policy = { ...defaultRecoveryPolicy, ...options };
+    if (![this.#policy.maxRetriesPerStep, this.#policy.maxReplacementPlans].every(Number.isInteger) ||
+      this.#policy.maxRetriesPerStep < 0 || this.#policy.maxReplacementPlans < 0 ||
+      !Number.isFinite(this.#policy.maxPlanAge) || this.#policy.maxPlanAge < 0) {
+      throw new Error("Invalid plan recovery policy");
+    }
+  }
+
+  async retry(input: { readonly agentId: AgentId; readonly stepId: string; readonly now: SimTime }): Promise<PlanRecoveryResult> {
+    const state = await this.stateStore.snapshot(input.agentId);
+    const plan = readPlanningState(state)?.activePlan;
+    const step = plan?.steps.find((candidate) => candidate.stepId === input.stepId);
+    if (!plan || plan.status !== "blocked" || step?.status !== "failed") return { status: "not-needed" };
+    if ((step.attempts ?? 0) > this.#policy.maxRetriesPerStep) return { status: "rejected", reason: "retry-limit-reached" };
+    const applied = await applyPlanningOperation(this.stateStore, state, {
+      kind: "retry-step", planId: plan.id, stepId: step.stepId, now: input.now
+    });
+    if (!applied) return { status: "stale" };
+    return { status: "retry-ready", plan: readPlanningState(await this.stateStore.snapshot(input.agentId))!.activePlan! };
+  }
+
+  async prepareReplacement(input: { readonly agentId: AgentId; readonly now: SimTime }): Promise<PlanRecoveryResult> {
+    const state = await this.stateStore.snapshot(input.agentId);
+    const planning = readPlanningState(state);
+    const plan = planning?.activePlan;
+    if (!plan || plan.status !== "blocked") return { status: "not-needed" };
+    const replacements = planning?.replacementPlanCounts?.[plan.goalId] ?? 0;
+    if (replacements >= this.#policy.maxReplacementPlans) {
+      return this.escalate(state, plan, "replacement-limit-reached", [], input.now);
+    }
+    const applied = await applyPlanningOperation(this.stateStore, state, {
+      kind: "archive-for-replan", planId: plan.id, now: input.now
+    });
+    return applied ? { status: "replacement-ready", goalId: plan.goalId } : { status: "stale" };
+  }
+
+  async enforceHorizon(input: { readonly agentId: AgentId; readonly now: SimTime }): Promise<PlanRecoveryResult> {
+    const state = await this.stateStore.snapshot(input.agentId);
+    const plan = readPlanningState(state)?.activePlan;
+    if (!plan || plan.status !== "active" || Number(input.now) - Number(plan.createdAt) <= this.#policy.maxPlanAge) return { status: "not-needed" };
+    const applied = await applyPlanningOperation(this.stateStore, state, {
+      kind: "block-plan", planId: plan.id, reason: "cortex-planning:horizon-exceeded", now: input.now
+    });
+    if (!applied) return { status: "stale" };
+    return { status: "blocked", plan: readPlanningState(await this.stateStore.snapshot(input.agentId))!.activePlan! };
+  }
+
+  async escalateObligations(input: {
+    readonly agentId: AgentId;
+    readonly obligations: readonly DecisionObligation[];
+    readonly now: SimTime;
+  }): Promise<PlanRecoveryResult> {
+    const state = await this.stateStore.snapshot(input.agentId);
+    return this.escalate(
+      state, readPlanningState(state)?.activePlan,
+      "obligation-unfulfillable", input.obligations.map((obligation) => obligation.id), input.now
+    );
+  }
+
+  private async escalate(
+    state: Readonly<AgentState>,
+    plan: Readonly<Plan> | undefined,
+    reason: PlanEscalationReason,
+    obligationIds: readonly string[],
+    now: SimTime
+  ): Promise<PlanRecoveryResult> {
+    const goalId = plan?.goalId ?? readGoalsState(state)?.goals.find((goal) => goal.status === "active")?.id;
+    if (!goalId) return { status: "rejected", reason: "no-active-goal" };
+    const duplicate = state.slices[PLANNING_SLICE_ID] === undefined ? undefined
+      : readPlanningState(state)?.escalations?.find((candidate) =>
+          candidate.goalId === goalId && candidate.planId === plan?.id && candidate.reason === reason &&
+          sameSet(candidate.obligationIds, obligationIds)
+        );
+    if (duplicate) return { status: "not-needed" };
+    const escalation: PlanEscalation = {
+      id: `escalation:${state.id}:${goalId}:v${state.version}`,
+      goalId, ...(plan ? { planId: plan.id } : {}), reason,
+      obligationIds: [...obligationIds], createdAt: now
+    };
+    const applied = await applyPlanningOperation(this.stateStore, state, { kind: "escalate", escalation });
+    return applied ? { status: "escalated", escalation } : { status: "stale" };
+  }
+}
 
 export class PlanManager {
   readonly #policy: PlanningPolicy;
@@ -237,7 +617,9 @@ export class PlanManager {
     if (!planning) return this.finish(input.goalId, state.version, { status: "rejected", reason: "pack-not-installed" });
     const goal = readGoalsState(state)?.goals.find((candidate) => candidate.id === input.goalId && candidate.status === "active");
     if (!goal) return this.finish(input.goalId, state.version, { status: "rejected", reason: "goal-not-active" });
-    if (planning.activePlan) return this.finish(input.goalId, state.version, { status: "rejected", reason: "active-plan-exists" });
+    if (planning.activePlan?.status === "active" || planning.activePlan?.status === "blocked") {
+      return this.finish(input.goalId, state.version, { status: "rejected", reason: "active-plan-exists" });
+    }
     const goalDefinition = this.domains.goal(goal.definitionId);
     const capabilities = this.domains.capabilities().filter((capability) =>
       capability.supportedGoals.includes(goal.definitionId) &&
@@ -273,7 +655,10 @@ export class PlanManager {
       id: `plan:${state.id}:${goal.id}:v${state.version}`,
       goalId: goal.id,
       ...(proposal.strategyId === undefined ? {} : { strategyId: proposal.strategyId }),
-      steps: proposal.steps.map((step) => ({ ...structuredClone(step), status: step.dependsOn.length === 0 ? "available" : "pending" })),
+      steps: proposal.steps.map((step) => ({
+        ...structuredClone(step), status: step.dependsOn.length === 0 ? "available" : "pending",
+        attempts: 0, outcomeEventIds: []
+      })),
       successConditionRefs: [...proposal.successConditionRefs],
       failureConditionRefs: [...proposal.failureConditionRefs],
       acknowledgedObligationIds: [...proposal.acknowledgedObligationIds],
@@ -376,6 +761,93 @@ export const readPlanningState = (state: Readonly<AgentState>): Readonly<Plannin
   return slice?.schemaVersion === PLANNING_SLICE_SCHEMA_VERSION && isPlanningState(slice.value) ? slice.value : undefined;
 };
 
+const withPlan = (state: Readonly<PlanningState>, plan: Plan): PlanningState => ({ ...state, activePlan: plan });
+
+const updateStep = (
+  plan: Readonly<Plan>,
+  stepId: string,
+  patch: Partial<PlanStep>
+): Plan => ({
+  ...plan,
+  steps: plan.steps.map((step) => step.stepId === stepId ? { ...step, ...patch } : step)
+});
+
+const resolveStep = (
+  plan: Readonly<Plan>,
+  command: Extract<PlanningOperation, { readonly kind: "resolve-step" }>
+): Plan => {
+  let steps = plan.steps.map((step): PlanStep => step.stepId === command.stepId
+    ? { ...step, status: command.outcome, outcomeEventIds: [...command.eventIds], statusReason: command.reason }
+    : step
+  );
+  const resolved = steps.find((step) => step.stepId === command.stepId)!;
+  if (command.outcome === "failed" && !resolved.optional) {
+    return {
+      ...plan, steps, status: "blocked", statusReason: command.reason, updatedAt: command.now
+    };
+  }
+  const dependencySatisfied = (dependencyId: string): boolean => {
+    const dependency = steps.find((step) => step.stepId === dependencyId)!;
+    return dependency.status === "succeeded" || dependency.status === "skipped" ||
+      (dependency.optional && dependency.status === "failed");
+  };
+  steps = steps.map((step) => step.status === "pending" && step.dependsOn.every(dependencySatisfied)
+    ? { ...step, status: "available" }
+    : step
+  );
+  const completed = steps.filter((step) => !step.optional).every((step) => step.status === "succeeded");
+  if (completed) {
+    steps = steps.map((step) => step.optional && ["pending", "available"].includes(step.status)
+      ? { ...step, status: "skipped", statusReason: "cortex-planning:required-steps-complete" }
+      : step
+    );
+  }
+  return {
+    ...plan, steps, status: completed ? "completed" : "active",
+    ...(completed ? { statusReason: "cortex-planning:required-steps-complete" } : {}),
+    updatedAt: command.now
+  };
+};
+
+const intentionMatchesStep = (
+  domains: DomainRegistry,
+  intention: Readonly<FeasibleIntention>,
+  step: Readonly<PlanStep>
+): boolean => {
+  const capability = domains.capability(step.capabilityId);
+  if (!capability || capability.version !== step.capabilityVersion || !capability.actionIds.includes(intention.kind as NamespacedId)) {
+    return false;
+  }
+  return step.target === undefined || intention.allowedTargets.some((target) =>
+    target.type === step.target!.type && target.id === step.target!.id
+  );
+};
+
+const uniqueIntentions = (intentions: readonly FeasibleIntention[]): readonly FeasibleIntention[] =>
+  [...new Map(intentions.map((intention) => [intention.id, intention])).values()];
+
+const applyPlanningOperation = async (
+  stateStore: AgentStateStore,
+  state: Readonly<AgentState>,
+  operation: PlanningOperation,
+  triggeredBy: readonly EventId[] = []
+): Promise<boolean> => {
+  const now = operationTime(operation);
+  const key = `planning:${state.id}:${operation.kind}:v${state.version}`;
+  const result = await stateStore.apply({
+    patchId: key, agentId: state.id, module: "cortex-planning:manager",
+    basedOnVersion: state.version, worldVersion: 0, observedThroughSequence: 0,
+    triggeredBy, idempotencyKey: key, rebasePolicy: "never", createdAt: now,
+    patch: { kind: "state-slice", sliceId: PLANNING_SLICE_ID, operation }
+  });
+  return result.status === "applied";
+};
+
+const operationTime = (operation: PlanningOperation): SimTime =>
+  operation.kind === "commit" ? operation.plan.createdAt
+    : operation.kind === "escalate" ? operation.escalation.createdAt
+      : operation.now;
+
 const isPlanProposal = (value: unknown): value is PlanProposal => {
   if (!isRecord(value)) return false;
   const allowed = new Set(["goalId", "strategyId", "steps", "successConditionRefs", "failureConditionRefs", "acknowledgedObligationIds", "reasonCode"]);
@@ -396,17 +868,38 @@ const isProposalStep = (value: unknown): value is PlanProposalStep => isRecord(v
 
 const isPlan = (value: unknown): value is Plan => isRecord(value) && isPlanProposal({
   goalId: value["goalId"], strategyId: value["strategyId"], steps: Array.isArray(value["steps"])
-    ? value["steps"].map((step) => isRecord(step) ? Object.fromEntries(Object.entries(step).filter(([key]) => key !== "status")) : step) : value["steps"],
+    ? value["steps"].map((step) => isRecord(step) ? Object.fromEntries(Object.entries(step).filter(([key]) =>
+      !["status", "attempts", "committedDecisionId", "actionId", "outcomeEventIds", "statusReason"].includes(key)
+    )) : step) : value["steps"],
   successConditionRefs: value["successConditionRefs"], failureConditionRefs: value["failureConditionRefs"],
   acknowledgedObligationIds: value["acknowledgedObligationIds"], reasonCode: value["reasonCode"]
-}) && typeof value["id"] === "string" && value["status"] === "active" && typeof value["createdAt"] === "number" &&
+}) && typeof value["id"] === "string" && ["active", "completed", "blocked", "invalidated", "abandoned"].includes(String(value["status"])) && typeof value["createdAt"] === "number" &&
   Number.isInteger(value["basedOnVersion"]) && ["reasoner", "deterministic-policy"].includes(String(value["source"])) &&
-  Array.isArray(value["steps"]) && value["steps"].every((step) => isRecord(step) && ["pending", "available", "committed", "succeeded", "failed", "skipped", "blocked"].includes(String(step["status"])));
+  (value["updatedAt"] === undefined || typeof value["updatedAt"] === "number") &&
+  (value["statusReason"] === undefined || (typeof value["statusReason"] === "string" && isNamespacedId(value["statusReason"]))) &&
+  Array.isArray(value["steps"]) && value["steps"].every((step) => isRecord(step) &&
+    ["pending", "available", "committed", "succeeded", "failed", "skipped", "blocked"].includes(String(step["status"])) &&
+    (step["attempts"] === undefined || (Number.isInteger(step["attempts"]) && Number(step["attempts"]) >= 0)) &&
+    (step["committedDecisionId"] === undefined || typeof step["committedDecisionId"] === "string") &&
+    (step["actionId"] === undefined || typeof step["actionId"] === "string") &&
+    (step["outcomeEventIds"] === undefined || (Array.isArray(step["outcomeEventIds"]) && step["outcomeEventIds"].every((id) => typeof id === "string"))) &&
+    (step["statusReason"] === undefined || (typeof step["statusReason"] === "string" && isNamespacedId(step["statusReason"]))));
 
 function isPlanningState(value: unknown): value is PlanningState {
-  return isRecord(value) && Object.keys(value).every((key) => key === "activePlan") &&
-    (value["activePlan"] === undefined || isPlan(value["activePlan"]));
+  return isRecord(value) && Object.keys(value).every((key) =>
+    ["activePlan", "recentPlans", "replacementPlanCounts", "escalations"].includes(key)
+  ) && (value["activePlan"] === undefined || isPlan(value["activePlan"])) &&
+    (value["recentPlans"] === undefined || (Array.isArray(value["recentPlans"]) && value["recentPlans"].every(isPlan))) &&
+    (value["replacementPlanCounts"] === undefined || (isRecord(value["replacementPlanCounts"]) && Object.values(value["replacementPlanCounts"]).every((count) => Number.isInteger(count) && Number(count) >= 0))) &&
+    (value["escalations"] === undefined || (Array.isArray(value["escalations"]) && value["escalations"].every(isEscalation)));
 }
+
+const isEscalation = (value: unknown): value is PlanEscalation => isRecord(value) &&
+  typeof value["id"] === "string" && typeof value["goalId"] === "string" &&
+  (value["planId"] === undefined || typeof value["planId"] === "string") &&
+  ["replacement-limit-reached", "obligation-unfulfillable", "plan-policy-conflict"].includes(String(value["reason"])) &&
+  Array.isArray(value["obligationIds"]) && value["obligationIds"].every((id) => typeof id === "string") &&
+  typeof value["createdAt"] === "number";
 const isIdArray = (value: unknown): value is NamespacedId[] => Array.isArray(value) && value.every((id) => typeof id === "string" && isNamespacedId(id));
 const isEntityRef = (value: unknown): value is EntityRef => isRecord(value) && typeof value["type"] === "string" && isNamespacedId(value["type"]) && typeof value["id"] === "string";
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> => typeof value === "object" && value !== null && !Array.isArray(value);

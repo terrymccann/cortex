@@ -1,13 +1,17 @@
 import {
-  asAgentId, asEntityId, asEventId, asGoalId, asSimTime,
+  asActionId, asAgentId, asEntityId, asEventId, asGoalId, asSimTime,
   type PerceptibleWorldEvent
 } from "@cortex/contracts";
 import { DomainRegistry, type GameDomain } from "@cortex/domain";
-import { CortexKernel, InMemoryAgentStateStore } from "@cortex/runtime";
+import {
+  ActionAwarenessModule, BoundedController, CortexKernel, FakeWorld, FrameBuilder,
+  InMemoryAgentStateStore, ScriptedControllerReasoner
+} from "@cortex/runtime";
 import { describe, expect, it } from "vitest";
 import { GOALS_SLICE_ID, goalsPack, type Goal } from "../src/goals.js";
 import {
-  PLANNING_SLICE_ID, MemoryPlanDiagnosticRecorder, PlanManager, planningPack,
+  PLANNING_SLICE_ID, MemoryPlanDiagnosticRecorder, PlanCoordinator, PlanLifecycleManager,
+  PlanManager, PlanRecoveryManager, planningPack, readPlanningState,
   type PlanProposal, type PlannerReasoner, type PlanningFrame
 } from "../src/planning.js";
 
@@ -111,6 +115,21 @@ const setup = async (input: { obligation?: boolean; planning?: boolean } = {}) =
   return { store, kernel, domains };
 };
 
+const commitPlan = async (
+  runtime: Awaited<ReturnType<typeof setup>>,
+  candidate = proposal()
+) => {
+  const result = await new PlanManager(runtime.store, runtime.domains).propose({
+    agentId, goalId, now: asSimTime(10), reasoner: reasoner(candidate)
+  });
+  if (result.status !== "committed") throw new Error(`Expected committed plan, received ${result.status}`);
+  return result.plan;
+};
+
+const feasible = (id: string, kind: string) => ({
+  id, kind, description: id, allowedTargets: [target], constraints: []
+});
+
 describe("PlanManager", () => {
   it("commits a bounded plan and exposes only dependency-ready steps", async () => {
     const { store, domains } = await setup();
@@ -193,5 +212,168 @@ describe("PlanManager", () => {
     const { store, domains } = await setup({ planning: false });
     await expect(new PlanManager(store, domains).propose({ agentId, goalId, now: asSimTime(10), reasoner: reasoner(proposal()) }))
       .resolves.toMatchObject({ status: "rejected", reason: "pack-not-installed" });
+  });
+});
+
+describe("Slice C plan coordination and lifecycle", () => {
+  it("applies strict, adaptive, and advisory eligibility without changing world feasibility", async () => {
+    const runtime = await setup(); await commitPlan(runtime);
+    const state = await runtime.store.snapshot(agentId);
+    const intentions = [
+      feasible("inspect-now", "test:inspect-action"),
+      feasible("escape-now", "test:escape-action"),
+      feasible("wait-now", "test:wait-action")
+    ];
+    const lifecycle = new PlanLifecycleManager(runtime.store, runtime.domains);
+    await expect(new PlanCoordinator(runtime.domains, lifecycle, { mode: "strict" }).coordinate({
+      state, situationId: "risk", now: asSimTime(11), feasibleIntentions: intentions, dueObligations: []
+    })).resolves.toMatchObject({ status: "eligible", intentions: [{ id: "inspect-now" }] });
+    await expect(new PlanCoordinator(runtime.domains, lifecycle, { mode: "adaptive", urgentIntentionKinds: ["test:escape-action"] }).coordinate({
+      state, situationId: "risk", now: asSimTime(11), feasibleIntentions: intentions, dueObligations: []
+    })).resolves.toMatchObject({ status: "eligible", intentions: [{ id: "inspect-now" }, { id: "escape-now" }] });
+    await expect(new PlanCoordinator(runtime.domains, lifecycle, { mode: "advisory" }).coordinate({
+      state, situationId: "risk", now: asSimTime(11), feasibleIntentions: intentions, dueObligations: []
+    })).resolves.toMatchObject({ status: "eligible", intentions });
+  });
+
+  it("integrates strict coordination after obligations and commits the matched step", async () => {
+    const runtime = await setup(); await commitPlan(runtime);
+    const world = new FakeWorld();
+    world.setFeasibleIntentions(agentId, [feasible("inspect-now", "test:inspect-action"), feasible("escape-now", "test:escape-action")]);
+    const lifecycle = new PlanLifecycleManager(runtime.store, runtime.domains);
+    const controller = new BoundedController(
+      runtime.store, world,
+      new ScriptedControllerReasoner((frame) => ({
+        intentionId: frame.feasibleIntentions[0]!.id, objective: "Follow the available plan step", commitment: 0.8, reasonCode: "test:follow-plan"
+      })), new FrameBuilder(), undefined,
+      { intentionCoordinator: new PlanCoordinator(runtime.domains, lifecycle, { mode: "strict" }) }
+    );
+    const decision = await controller.decide({ agentId, situationId: "risk", situation: "Protect target", now: asSimTime(11) });
+    expect(decision).toMatchObject({ status: "committed", intention: { id: "inspect-now" } });
+    if (decision.status !== "committed") return;
+    const committed = await lifecycle.commitDecision({ agentId, decisionId: decision.decision.id, intention: decision.intention, now: asSimTime(11) });
+    expect(committed.status).toBe("applied");
+    if (committed.status === "applied") {
+      expect(committed.plan.steps.find((step) => step.stepId === "inspect")?.status).toBe("committed");
+    }
+  });
+
+  it("lets a due obligation override strict plan filtering", async () => {
+    const runtime = await setup({ obligation: true });
+    await commitPlan(runtime, proposal({ acknowledgedObligationIds: ["duty-1"] }));
+    const world = new FakeWorld();
+    world.setFeasibleIntentions(agentId, [feasible("protect", "test:escape-action"), feasible("inspect-now", "test:inspect-action")]);
+    const lifecycle = new PlanLifecycleManager(runtime.store, runtime.domains);
+    const result = await new BoundedController(
+      runtime.store, world,
+      new ScriptedControllerReasoner((frame) => ({ intentionId: frame.feasibleIntentions[0]!.id, objective: "Honor due duty", commitment: 1, reasonCode: "test:due-duty" })),
+      new FrameBuilder(), undefined,
+      { intentionCoordinator: new PlanCoordinator(runtime.domains, lifecycle, { mode: "strict" }) }
+    ).decide({ agentId, situationId: "duty", situation: "Duty is due", now: asSimTime(11) });
+    expect(result).toMatchObject({ status: "committed", intention: { id: "protect" }, enforcedObligationIds: ["duty-1"] });
+    if (result.status === "committed") {
+      await expect(lifecycle.commitDecision({ agentId, decisionId: result.decision.id, intention: result.intention, now: asSimTime(11) }))
+        .resolves.toEqual({ status: "no-match" });
+    }
+  });
+
+  it("blocks explicitly when no plan capability is currently feasible", async () => {
+    const runtime = await setup(); await commitPlan(runtime);
+    const world = new FakeWorld(); world.setFeasibleIntentions(agentId, [feasible("wait", "test:wait-action")]);
+    const lifecycle = new PlanLifecycleManager(runtime.store, runtime.domains);
+    const result = await new BoundedController(
+      runtime.store, world,
+      new ScriptedControllerReasoner(() => ({ intentionId: "wait", objective: "Wait", commitment: 1, reasonCode: "test:wait" })),
+      new FrameBuilder(), undefined,
+      { intentionCoordinator: new PlanCoordinator(runtime.domains, lifecycle, { mode: "strict" }) }
+    ).decide({ agentId, situationId: "blocked", situation: "No planned option", now: asSimTime(11) });
+    expect(result).toEqual({ status: "coordination-blocked", reason: "plan-no-feasible-step" });
+    expect(readPlanningState(await runtime.store.snapshot(agentId))?.activePlan?.status).toBe("blocked");
+  });
+
+  it("advances and completes a plan only after a grounded authoritative expectation succeeds", async () => {
+    const runtime = await setup();
+    await commitPlan(runtime, proposal({ strategyId: undefined, steps: [{
+      stepId: "protect", capabilityId: "test:shield", capabilityVersion: 1,
+      parameters: { strength: 1 }, target, dependsOn: [], optional: false
+    }] }));
+    const world = new FakeWorld(); world.setFeasibleIntentions(agentId, [feasible("shield-now", "test:shield-action")]);
+    const lifecycle = new PlanLifecycleManager(runtime.store, runtime.domains);
+    const decision = await new BoundedController(
+      runtime.store, world,
+      new ScriptedControllerReasoner(() => ({ intentionId: "shield-now", objective: "Shield target", commitment: 1, reasonCode: "test:shield" })),
+      new FrameBuilder(), undefined,
+      { intentionCoordinator: new PlanCoordinator(runtime.domains, lifecycle, { mode: "strict" }) }
+    ).decide({ agentId, situationId: "protect", situation: "Protect", now: asSimTime(11) });
+    if (decision.status !== "committed") throw new Error("Expected decision");
+    await lifecycle.commitDecision({ agentId, decisionId: decision.decision.id, intention: decision.intention, now: asSimTime(11) });
+    const actionId = asActionId(`action:${decision.decision.id}`);
+    await lifecycle.observeSubmission({ agentId, decisionId: decision.decision.id, submission: { status: "accepted", actionId }, now: asSimTime(12) });
+    const awareness = new ActionAwarenessModule(runtime.store, [{
+      definitionId: "test:protected", definitionVersion: 1,
+      matches: (_effect, event) => event.observedFacts.some((fact) => fact.subject.id === target.id && fact.predicate === "protected" && fact.object === true)
+    }]);
+    await awareness.expect(agentId, {
+      actionId, expectedEffects: [{ definitionId: "test:protected", definitionVersion: 1, subject: target, parameters: {}, deadline: asSimTime(20) }],
+      status: "pending", resolutionEventIds: []
+    }, asSimTime(12));
+    expect(readPlanningState(await runtime.store.snapshot(agentId))?.activePlan?.steps[0]?.status).toBe("committed");
+    const outcome: PerceptibleWorldEvent = {
+      observer: agentId, channel: "system", clarity: 1,
+      observedFacts: [{ subject: target, predicate: "protected", object: true, confidence: 1 }],
+      event: { id: asEventId("event:protected"), sequence: 2, worldVersion: 2, simTime: asSimTime(13), type: "test:update", targets: [target], payload: {}, causedBy: actionId }
+    };
+    await runtime.kernel.ingest(outcome); await awareness.observe(agentId, outcome);
+    await expect(lifecycle.reconcile({ agentId, now: asSimTime(13) })).resolves.toMatchObject({
+      status: "applied", plan: { status: "completed", steps: [{ status: "succeeded", outcomeEventIds: ["event:protected"] }] }
+    });
+  });
+
+  it("blocks rejected actions, permits only bounded retry, and never fabricates an outcome", async () => {
+    const runtime = await setup();
+    await commitPlan(runtime, proposal({ strategyId: undefined, steps: [{
+      stepId: "protect", capabilityId: "test:shield", capabilityVersion: 1,
+      parameters: { strength: 1 }, target, dependsOn: [], optional: false
+    }] }));
+    const lifecycle = new PlanLifecycleManager(runtime.store, runtime.domains);
+    const world = new FakeWorld(); world.setFeasibleIntentions(agentId, [feasible("shield-now", "test:shield-action")]);
+    let cycle = 0;
+    const decide = () => new BoundedController(runtime.store, world,
+      new ScriptedControllerReasoner(() => ({ intentionId: "shield-now", objective: "Try shield", commitment: 1, reasonCode: "test:shield" })),
+      new FrameBuilder(), undefined, { intentionCoordinator: new PlanCoordinator(runtime.domains, lifecycle, { mode: "strict" }) }
+    ).decide({ agentId, situationId: `protect-${++cycle}`, situation: "Protect", now: asSimTime(11 + cycle) });
+    const first = await decide(); if (first.status !== "committed") throw new Error("Expected decision");
+    await lifecycle.commitDecision({ agentId, decisionId: first.decision.id, intention: first.intention, now: asSimTime(11) });
+    await lifecycle.observeSubmission({ agentId, decisionId: first.decision.id, submission: { status: "rejected", actionId: asActionId("action:rejected"), reason: "precondition-failed" }, now: asSimTime(12) });
+    expect(readPlanningState(await runtime.store.snapshot(agentId))?.activePlan).toMatchObject({ status: "blocked", steps: [{ status: "failed", outcomeEventIds: [] }] });
+    const recovery = new PlanRecoveryManager(runtime.store, { maxRetriesPerStep: 1 });
+    expect(await recovery.retry({ agentId, stepId: "protect", now: asSimTime(13) })).toMatchObject({ status: "retry-ready" });
+    const second = await decide(); if (second.status !== "committed") throw new Error("Expected retry decision");
+    await lifecycle.commitDecision({ agentId, decisionId: second.decision.id, intention: second.intention, now: asSimTime(14) });
+    await lifecycle.observeSubmission({ agentId, decisionId: second.decision.id, submission: { status: "rejected", actionId: asActionId("action:rejected-again"), reason: "precondition-failed" }, now: asSimTime(15) });
+    await expect(recovery.retry({ agentId, stepId: "protect", now: asSimTime(16) })).resolves.toEqual({ status: "rejected", reason: "retry-limit-reached" });
+  });
+
+  it("bounds replacement plans, records escalation, and enforces simulation-time horizon", async () => {
+    const runtime = await setup(); await commitPlan(runtime);
+    const lifecycle = new PlanLifecycleManager(runtime.store, runtime.domains);
+    const recovery = new PlanRecoveryManager(runtime.store, { maxReplacementPlans: 1, maxPlanAge: 5 });
+    expect(await recovery.enforceHorizon({ agentId, now: asSimTime(20) })).toMatchObject({ status: "blocked", plan: { status: "blocked" } });
+    expect(await recovery.prepareReplacement({ agentId, now: asSimTime(21) })).toMatchObject({ status: "replacement-ready", goalId });
+    await commitPlan(runtime);
+    await lifecycle.blockPlan({ agentId, reason: "cortex-planning:no-feasible-step", now: asSimTime(22) });
+    const result = await recovery.prepareReplacement({ agentId, now: asSimTime(23) });
+    expect(result).toMatchObject({ status: "escalated", escalation: { reason: "replacement-limit-reached", goalId } });
+    expect(readPlanningState(await runtime.store.snapshot(agentId))?.escalations).toHaveLength(1);
+  });
+
+  it("records an impossible obligation as escalation instead of satisfaction", async () => {
+    const runtime = await setup({ obligation: true });
+    const recovery = new PlanRecoveryManager(runtime.store);
+    const result = await recovery.escalateObligations({
+      agentId, obligations: (await runtime.store.snapshot(agentId)).activeObligations, now: asSimTime(20)
+    });
+    expect(result).toMatchObject({ status: "escalated", escalation: { reason: "obligation-unfulfillable", obligationIds: ["duty-1"] } });
+    expect((await runtime.store.snapshot(agentId)).activeObligations).toHaveLength(1);
   });
 });

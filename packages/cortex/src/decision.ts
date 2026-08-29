@@ -519,6 +519,7 @@ export type ControllerResult =
       readonly status: "obligation-unfulfillable";
       readonly obligations: readonly DecisionObligation[];
     }
+  | { readonly status: "coordination-blocked"; readonly reason: string }
   | { readonly status: "cancelled" }
   | { readonly status: "stale"; readonly applyResult: PatchApplyResult };
 
@@ -537,6 +538,23 @@ export interface ControllerDiagnostic {
   readonly eligibleIntentionIds: readonly string[];
   readonly fallbackReason?: ControllerFallbackReason;
   readonly validationIssue?: ControllerOutputValidationIssue;
+  readonly coordinationReason?: string;
+}
+
+export interface IntentionCoordinationInput {
+  readonly state: Readonly<AgentState>;
+  readonly situationId: string;
+  readonly now: SimTime;
+  readonly feasibleIntentions: readonly FeasibleIntention[];
+  readonly dueObligations: readonly DecisionObligation[];
+}
+
+export type IntentionCoordinationResult =
+  | { readonly status: "eligible"; readonly intentions: readonly FeasibleIntention[] }
+  | { readonly status: "blocked"; readonly reason: string };
+
+export interface IntentionCoordinator {
+  coordinate(input: IntentionCoordinationInput): IntentionCoordinationResult | Promise<IntentionCoordinationResult>;
 }
 
 export interface ControllerDiagnosticSink {
@@ -549,6 +567,7 @@ export interface BoundedControllerOptions {
   readonly outputValidator?: ControllerOutputValidator;
   readonly diagnosticSink?: ControllerDiagnosticSink;
   readonly decisionRecorder?: AcceptedDecisionRecorder;
+  readonly intentionCoordinator?: IntentionCoordinator;
 }
 
 export interface ObligationConstraintResult {
@@ -609,10 +628,12 @@ export class BoundedController {
     });
     if (feasibleIntentions.length === 0) return { status: "no-feasible-intention" };
 
-    const { dueObligations, eligibleIntentions } = constrainIntentionsByObligations(
+    const obligationResult = constrainIntentionsByObligations(
       feasibleIntentions,
       state.activeObligations
     );
+    const { dueObligations } = obligationResult;
+    let eligibleIntentions = obligationResult.eligibleIntentions;
     if (eligibleIntentions.length === 0) {
       await this.recordDiagnostic({
         frameId: `${state.id}:${request.situationId}:v${state.version}`,
@@ -624,6 +645,33 @@ export class BoundedController {
         eligibleIntentionIds: []
       });
       return { status: "obligation-unfulfillable", obligations: dueObligations };
+    }
+
+    if (this.options.intentionCoordinator) {
+      const coordinated = await this.options.intentionCoordinator.coordinate({
+        state,
+        situationId: request.situationId,
+        now: request.now,
+        feasibleIntentions: eligibleIntentions,
+        dueObligations
+      });
+      if (coordinated.status === "blocked") {
+        await this.recordDiagnostic({
+          frameId: `${state.id}:${request.situationId}:v${state.version}`,
+          outcome: "coordination-blocked",
+          reasonerAttempts: 0,
+          usedFallback: false,
+          activeObligationIds: state.activeObligations.map((obligation) => obligation.id),
+          enforcedObligationIds: dueObligations.map((obligation) => obligation.id),
+          eligibleIntentionIds: [],
+          coordinationReason: coordinated.reason
+        });
+        return { status: "coordination-blocked", reason: coordinated.reason };
+      }
+      eligibleIntentions = coordinated.intentions;
+      if (eligibleIntentions.length === 0) {
+        return { status: "coordination-blocked", reason: "coordinator-returned-no-intentions" };
+      }
     }
 
     const frame = this.frameBuilder.build({
