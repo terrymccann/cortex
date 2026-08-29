@@ -9,9 +9,9 @@ delivery progress rather than token, API, or model usage.
 
 **Current milestone:** Phase 3.2 — Living Story Runtime
 
-**Status:** In progress; Slice A implemented in the separate `cortex-living-story` repository
+**Status:** In progress; Slices A and B implemented in the separate `cortex-living-story` repository
 
-**Next step:** Slice B — Actions, dialogue, and observer projections
+**Next step:** Slice C — Ensemble and scene orchestration
 
 ## Milestones
 
@@ -29,8 +29,8 @@ delivery progress rather than token, API, or model usage.
 | Slice | Status | Scope |
 | --- | --- | --- |
 | A | Complete | Story host and designer authoring contracts, including Character Codex and style profiles |
-| B | Next | Bounded story actions, dialogue, and observer projections |
-| C | Pending | Ensemble scheduling, scenes, and story-thread orchestration |
+| B | Complete | Bounded story actions, dialogue, and observer projections |
+| C | Next | Ensemble scheduling, scenes, and story-thread orchestration |
 | D | Pending | Narrative Director, prose renderer, and reader experience |
 | E | Pending | Deterministic replay, evaluation, inspection, and product proof |
 

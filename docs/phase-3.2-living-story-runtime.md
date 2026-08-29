@@ -1,6 +1,6 @@
 # Phase 3.2: Living Story Runtime
 
-Status: implementation in progress; Slice A complete
+Status: implementation in progress; Slices A and B complete
 Scope: authoritative textual worlds, bounded ensemble orchestration, dialogue,
 narrative rendering, designer authoring, inspection, evaluation, and replay  
 Depends on:
@@ -795,7 +795,7 @@ repository and must not appear in Cortex production source.
 - implement authoring validation and deterministic story state; and
 - add an offline reference scenario fixture.
 
-### Slice B — Actions, dialogue, and observer projections
+### Slice B — Actions, dialogue, and observer projections (complete)
 
 - register the bounded story-domain vocabulary;
 - implement deterministic action and speech resolvers;
