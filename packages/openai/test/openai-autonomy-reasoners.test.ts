@@ -73,18 +73,24 @@ describe("OpenAI autonomy reasoners", () => {
     expect(String(body["instructions"])).not.toContain("self-destruct");
     expect(String(body["input"])).toContain("self-destruct");
     expect(JSON.stringify(body["text"])).toContain('"strict":true');
+    expect(JSON.stringify(body["text"])).not.toContain('"uniqueItems"');
+    expect(JSON.stringify(body["text"])).not.toContain('"const"');
     expect(audit).toMatchObject([{ reasonerKind: "goal", usage: { totalTokens: 110 } }]);
   });
 
   it("normalizes nullable optional plan fields without granting mechanics authority", async () => {
+    let body: Record<string, unknown> = {};
     const reasoner = new OpenAIPlannerReasoner({
-      apiKey: "test", model: "gpt-test", fetch: async () => response({
-        goalId: "goal:preserve", strategyId: null,
-        steps: [{ stepId: "withdraw", capabilityId: "test:withdraw", capabilityVersion: 1,
-          parameters: {}, target: null, dependsOn: [], optional: false }],
-        successConditionRefs: ["test:safe"], failureConditionRefs: [],
-        acknowledgedObligationIds: [], reasonCode: "test:reduce-risk"
-      })
+      apiKey: "test", model: "gpt-test", fetch: async (_url, init) => {
+        body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        return response({
+          goalId: "goal:preserve", strategyId: null,
+          steps: [{ stepId: "withdraw", capabilityId: "test:withdraw", capabilityVersion: 1,
+            parameters: {}, target: null, dependsOn: [], optional: false }],
+          successConditionRefs: ["test:safe"], failureConditionRefs: [],
+          acknowledgedObligationIds: [], reasonCode: "test:reduce-risk"
+        });
+      }
     });
     await expect(reasoner.propose(planningFrame(), new AbortController().signal)).resolves.toEqual({
       goalId: "goal:preserve",
@@ -93,6 +99,8 @@ describe("OpenAI autonomy reasoners", () => {
       successConditionRefs: ["test:safe"], failureConditionRefs: [],
       acknowledgedObligationIds: [], reasonCode: "test:reduce-risk"
     });
+    expect(JSON.stringify(body["text"])).not.toContain('"uniqueItems"');
+    expect(JSON.stringify(body["text"])).not.toContain('"const"');
   });
 
   it("records structurally invalid autonomy output as a validation error", async () => {
@@ -110,5 +118,18 @@ describe("OpenAI autonomy reasoners", () => {
       code: "invalid-output:goal-proposal"
     });
     expect(audit).toMatchObject([{ reasonerKind: "goal", status: "validation-error" }]);
+  });
+
+  it("surfaces a bounded provider error detail for rejected schemas", async () => {
+    const reasoner = new OpenAIGoalReasoner({
+      apiKey: "test", model: "gpt-test",
+      fetch: async () => new Response(JSON.stringify({
+        error: { message: "Invalid schema: unsupported keyword uniqueItems", type: "invalid_request_error" }
+      }), { status: 400, headers: { "content-type": "application/json" } })
+    });
+    await expect(reasoner.propose(goalFrame(), new AbortController().signal)).rejects.toMatchObject({
+      code: "http-400",
+      message: "OpenAI request failed with HTTP 400: Invalid schema: unsupported keyword uniqueItems"
+    });
   });
 });

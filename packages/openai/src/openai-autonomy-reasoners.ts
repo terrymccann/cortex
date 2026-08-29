@@ -12,8 +12,8 @@ import type {
   OpenAIUsage
 } from "./openai-controller-reasoner.js";
 
-export const OPENAI_GOAL_PROMPT_VERSION = "cortex-goal-reasoner-v1";
-export const OPENAI_PLANNER_PROMPT_VERSION = "cortex-planner-reasoner-v1";
+export const OPENAI_GOAL_PROMPT_VERSION = "cortex-goal-reasoner-v2";
+export const OPENAI_PLANNER_PROMPT_VERSION = "cortex-planner-reasoner-v2";
 
 export interface OpenAIGoalFormationFrame {
   readonly schemaVersion: "cortex-goal-formation-frame-v1";
@@ -156,8 +156,9 @@ abstract class OpenAIStructuredAutonomyReasoner {
         throw new ControllerReasonerError("OpenAI request failed", "provider-request", true, { cause: error });
       }
       if (!response.ok) {
+        const providerDetail = await readProviderErrorDetail(response);
         throw new ControllerReasonerError(
-          `OpenAI request failed with HTTP ${response.status}`,
+          `OpenAI request failed with HTTP ${response.status}${providerDetail === undefined ? "" : `: ${providerDetail}`}`,
           `http-${response.status}`,
           response.status === 408 || response.status === 409 || response.status === 429 || response.status >= 500
         );
@@ -268,11 +269,11 @@ const goalSchema = (frame: OpenAIGoalFormationFrame): Readonly<Record<string, un
     definitionVersion: { type: "integer", enum: frame.availableDefinitions.map((item) => item.version) },
     parameters: { anyOf: frame.availableDefinitions.map((item) => item.parameterSchema) },
     motivationIds: {
-      type: "array", minItems: 1, uniqueItems: true,
+      type: "array", minItems: 1,
       items: { type: "string", enum: [...new Set(frame.availableDefinitions.flatMap((item) => item.admissibleMotivations))] }
     },
     evidenceRefs: {
-      type: "array", minItems: 1, uniqueItems: true,
+      type: "array", minItems: 1,
       items: { type: "object", additionalProperties: false, properties: {
         eventId: { type: "string", enum: frame.visibleEvidence.map((item) => item.eventId) }
       }, required: ["eventId"] }
@@ -287,38 +288,38 @@ const goalSchema = (frame: OpenAIGoalFormationFrame): Readonly<Record<string, un
 const planSchema = (frame: OpenAIPlanningFrame): Readonly<Record<string, unknown>> => ({
   type: "object", additionalProperties: false,
   properties: {
-    goalId: { type: "string", const: frame.activeGoal.id },
-    strategyId: { anyOf: [{ type: "null" }, ...frame.strategies.map((item) => ({ type: "string", const: item.id }))] },
+    goalId: { type: "string", enum: [frame.activeGoal.id] },
+    strategyId: { anyOf: [{ type: "null" }, ...frame.strategies.map((item) => ({ type: "string", enum: [item.id] }))] },
     steps: {
       type: "array", minItems: 1, maxItems: frame.limits.maxSteps,
       items: { anyOf: frame.capabilities.map((capability) => ({
         type: "object", additionalProperties: false,
         properties: {
           stepId: { type: "string", minLength: 1, maxLength: 100 },
-          capabilityId: { type: "string", const: capability.id },
-          capabilityVersion: { type: "integer", const: capability.version },
+          capabilityId: { type: "string", enum: [capability.id] },
+          capabilityVersion: { type: "integer", enum: [capability.version] },
           parameters: capability.parameterSchema,
           target: {
             anyOf: [
               { type: "null" },
               ...frame.visibleEntities.filter((entity) => capability.targetTypes.includes(entity.type)).map((entity) => ({
                 type: "object", additionalProperties: false,
-                properties: { type: { type: "string", const: entity.type }, id: { type: "string", const: entity.id } },
+                properties: { type: { type: "string", enum: [entity.type] }, id: { type: "string", enum: [entity.id] } },
                 required: ["type", "id"]
               }))
             ]
           },
-          dependsOn: { type: "array", uniqueItems: true, items: { type: "string" } },
+          dependsOn: { type: "array", items: { type: "string" } },
           optional: { type: "boolean" }
         },
         required: ["stepId", "capabilityId", "capabilityVersion", "parameters", "target", "dependsOn", "optional"]
       })) }
     },
-    successConditionRefs: { type: "array", minItems: 1, uniqueItems: true, items: { type: "string" } },
-    failureConditionRefs: { type: "array", uniqueItems: true, items: { type: "string" } },
+    successConditionRefs: { type: "array", minItems: 1, items: { type: "string" } },
+    failureConditionRefs: { type: "array", items: { type: "string" } },
     acknowledgedObligationIds: frame.activeObligationIds.length === 0
       ? { type: "array", maxItems: 0, items: { type: "string" } }
-      : { type: "array", uniqueItems: true, items: { type: "string", enum: frame.activeObligationIds } },
+      : { type: "array", items: { type: "string", enum: frame.activeObligationIds } },
     reasonCode: { type: "string", pattern: "^[a-z][a-z0-9-]*:[a-z][a-z0-9-]*$" }
   },
   required: ["goalId", "strategyId", "steps", "successConditionRefs", "failureConditionRefs", "acknowledgedObligationIds", "reasonCode"]
@@ -378,6 +379,24 @@ const parseUsage = (value: unknown): OpenAIUsage | undefined => {
     reasoningTokens: isRecord(details) && typeof details["reasoning_tokens"] === "number" ? details["reasoning_tokens"] : 0,
     totalTokens: value["total_tokens"]
   };
+};
+
+const readProviderErrorDetail = async (response: Response): Promise<string | undefined> => {
+  try {
+    const raw = await response.text();
+    if (raw.length === 0) return undefined;
+    let detail = raw;
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (isRecord(parsed) && isRecord(parsed["error"]) && typeof parsed["error"]["message"] === "string") {
+        detail = parsed["error"]["message"];
+      }
+    } catch { /* A non-JSON provider response is still useful after sanitization. */ }
+    const sanitized = detail.replace(/[\r\n\t]+/g, " ").replace(/\s+/g, " ").trim();
+    return sanitized.length === 0 ? undefined : sanitized.slice(0, 500);
+  } catch {
+    return undefined;
+  }
 };
 
 const elapsed = (endedAt: number, startedAt: number): number => Math.max(0, endedAt - startedAt);
