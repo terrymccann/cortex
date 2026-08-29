@@ -53,6 +53,10 @@ structured inspection are recorded in
 Slice E controlled behavioral cohorts, autonomy provider adapters, metrics, and
 baseline policy are recorded in
 [docs/phase-3.1-slice-e-behavioral-evaluation.md](docs/phase-3.1-slice-e-behavioral-evaluation.md).
+The next clean-room product proof—a text-first authoritative world with bounded
+ensemble characters, narrative rendering, designer authoring, inspection, and
+replay—is specified in
+[docs/phase-3.2-living-story-runtime.md](docs/phase-3.2-living-story-runtime.md).
 
 The first implementation milestone is a deterministic, in-memory vertical slice.
 PostgreSQL, pgvector, Redis, BullMQ, a visual client, and a narrative Director are

@@ -1,0 +1,614 @@
+# Phase 3.2: Living Story Runtime
+
+Status: proposed implementation specification  
+Scope: authoritative textual worlds, bounded ensemble orchestration, dialogue,
+narrative rendering, designer authoring, inspection, evaluation, and replay  
+Depends on:
+[Phase 3.0: Core Generalization and Extension Contracts](phase-3.0-core-generalization.md),
+[Phase 3.1: Bounded Emergent Autonomy](phase-3.1-bounded-emergent-autonomy.md),
+[technical-design.md](technical-design.md), and
+[product-architecture.md](product-architecture.md)
+
+## 1. Purpose
+
+Phase 3.2 proves that Cortex can power a designer-authored, text-first living
+world in which autonomous characters act out a scenario that has an authored
+beginning and rules but no predetermined plot.
+
+The phase answers one question:
+
+> Can several bounded Cortex agents produce a coherent, readable, causally
+> grounded story over time without allowing a character model or narrator to
+> invent world truth?
+
+This is a product-boundary proof, not a new genre embedded in Cortex core. The
+living-story host, story domain, reference scenario, and reader belong in a
+separate repository and consume Cortex through public contracts.
+
+## 2. Product thesis
+
+A living story is not a collection of models taking turns writing fiction. It
+is an authoritative simulation rendered as prose.
+
+```text
+Character cognition
+  proposes goals, plans, speech, and actions
+                 |
+                 v
+Authoritative story world
+  validates actions and records consequences
+                 |
+                 v
+Narrative Director
+  selects accepted events and presentation order
+                 |
+                 v
+Narrative renderer
+  expresses grounded events as readable prose
+```
+
+Cortex supplies character agency. The story host supplies truth, time, action
+resolution, ensemble scheduling, and presentation.
+
+## 3. Prerequisites
+
+Phase 3.2 begins only after Phase 3.1 has:
+
+- frozen a live bounded-autonomy baseline;
+- validated goal and plan proposals against registered domain semantics;
+- demonstrated authoritative action outcomes and bounded replanning;
+- recorded full causal trajectories;
+- replayed accepted trajectories with zero model calls; and
+- kept evaluation preferences out of runtime prompts.
+
+The accepted Phase 3.1 baseline remains a regression boundary. Story-product
+work must not weaken it.
+
+## 4. Outcome
+
+At the end of Phase 3.2, a designer can:
+
+1. define a contained scenario, cast, locations, objects, secrets, and opening
+   events using versioned authoring files;
+2. validate that content without editing Cortex core;
+3. start a text-first simulation containing at least four autonomous
+   characters;
+4. observe characters form goals, move between locations, investigate,
+   converse, reveal or conceal information, and react to consequences;
+5. pause, resume, accelerate, and inspect the simulation;
+6. introduce a bounded director event without granting every character
+   knowledge of it;
+7. read a coherent live narrative grounded in accepted story events;
+8. inspect why a character acted using structured causal records rather than
+   hidden chain-of-thought; and
+9. replay the complete accepted story trajectory with zero model calls.
+
+## 5. Non-goals
+
+Phase 3.2 does not include:
+
+- a visual game engine, tile renderer, animation system, or asset pipeline;
+- unrestricted collaborative fiction in which generated prose becomes truth;
+- a model-authored ontology, action type, policy, character, or location;
+- full diplomatic negotiation, factions, institutions, or shared-plan
+  protocols;
+- unrestricted user edits to canonical history;
+- production-scale persistent worlds or distributed scheduling;
+- a marketplace for scenarios or packs;
+- a polished commercial authoring application;
+- voice synthesis, image generation, or cinematic presentation;
+- autonomous code execution or self-modifying story rules; or
+- continual model calls for every character after every sentence.
+
+## 6. Authority boundary
+
+| Concern | Owner |
+| --- | --- |
+| Canonical facts, time, presence, possession, and outcomes | Story world |
+| Character observations | Observer projection |
+| Character memories, beliefs, goals, and plans | Cortex packs and managers |
+| Legal character capabilities | Designer-authored story domain |
+| Immediate character decisions | Cortex Controller |
+| Action validation and consequences | Deterministic story action resolver |
+| Speech intention and proposed utterance | Character reasoner or deterministic dialogue policy |
+| Whether an utterance was spoken and heard | Story world |
+| Scene selection and reader viewpoint | Narrative Director |
+| Prose expression of accepted events | Narrative renderer |
+| Canonical story history | Accepted event log |
+
+Generated narration is presentation, not state. A sentence cannot make a door
+open, injure a character, transfer an object, reveal a secret, or establish a
+fact unless an accepted source event already records that change.
+
+## 7. Repository and dependency boundary
+
+The initial implementation should use a separate repository, tentatively
+`cortex-living-story`.
+
+```text
+cortex
+  provider-neutral runtime, SDK, packs, and optional provider adapters
+
+cortex-living-story
+  story domain
+  authoritative story host
+  ensemble and scene scheduler
+  Narrative Director
+  prose renderer
+  reader and inspector
+  reference scenario
+  living-story evaluations
+```
+
+The living-story repository may depend on published or workspace-linked Cortex
+packages. Cortex production packages may not import it.
+
+A core change is permitted only when the clean-room integration demonstrates a
+general public-contract gap. Any such change must pass the existing drone,
+colony, social-reference, replay, and Phase 3.1 baseline tests without adding
+story-specific identifiers to production source.
+
+## 8. Authoritative story state
+
+The story host owns a versioned state containing at minimum:
+
+- simulation time and scene chronology;
+- characters and their current locations;
+- location topology and access constraints;
+- objects, ownership, possession, and visibility;
+- public facts and world conditions;
+- private source facts used to construct observer projections;
+- accepted actions and outcomes;
+- current conversations and scene membership; and
+- externally introduced director events.
+
+Story state is not a prose document. It is structured, validated data. Prose is
+derived from it.
+
+All writes use deterministic reducers or trusted action resolvers. Character
+and narrator models receive snapshots and return proposals only.
+
+## 9. Knowledge, belief, and secrets
+
+The product must distinguish:
+
+```text
+world truth
+  what the authoritative story state records
+
+observation
+  what a character could perceive from an event
+
+belief
+  what the character currently treats as likely
+
+utterance
+  what a character says, truthfully or otherwise
+
+narration
+  what the current reader viewpoint is allowed to see
+```
+
+A spoken claim does not become a world fact. A character may lie, misunderstand,
+forget, infer incorrectly, or repeat a rumor. Cortex belief and memory packs
+may update from those observations while the story state retains the canonical
+distinction.
+
+Secret visibility is controlled by observer projections and narrative
+viewpoint policy, never by hiding text inside a shared prompt.
+
+## 10. Story-domain vocabulary
+
+The reference story domain should register semantic definitions for:
+
+- character, location, object, passage, conversation, and information-source
+  entity types;
+- presence, visibility, audibility, possession, access, injury, and time facts;
+- motivations such as safety, belonging, loyalty, curiosity, status, duty, and
+  self-interest;
+- goal definitions such as learn, protect, obtain, conceal, reveal, persuade,
+  reconcile, escape, and expose; and
+- effects and constraints used to evaluate those goals.
+
+These definitions belong to a story pack or domain manifest. They are examples
+of public extension contracts, not additions to the generic Cortex kernel.
+
+## 11. Bounded action vocabulary
+
+The MVP should support a small, explicit capability set:
+
+- move to an adjacent accessible location;
+- observe a visible character, object, or location feature;
+- inspect or search a permitted target;
+- initiate, join, leave, or interrupt a conversation;
+- speak to one or more present recipients;
+- ask, answer, accuse, deny, promise, warn, reveal, or deceive;
+- give, take, show, hide, or use a permitted object;
+- wait or disengage; and
+- request assistance.
+
+Every capability declares parameter schemas, target types, requirements,
+risks, possible effects, and the deterministic skill that constructs the world
+action.
+
+The action resolver revalidates presence, access, possession, timing,
+conversation membership, and other preconditions at submission time. It returns
+accepted, rejected, interrupted, partial, failed, or completed outcomes with
+authoritative evidence.
+
+## 12. Dialogue contract
+
+Dialogue is a world action with presentation content. A proposal conceptually
+contains:
+
+```ts
+interface StoryUtteranceProposal {
+  readonly dialogueActId: NamespacedId;
+  readonly speakerId: AgentId;
+  readonly recipientIds: readonly AgentId[];
+  readonly topicRefs: readonly EntityRef[];
+  readonly text: string;
+  readonly toneTags: readonly NamespacedId[];
+  readonly claimedFactRefs: readonly NamespacedId[];
+  readonly reasonCode: NamespacedId;
+}
+```
+
+The host validates speaker presence, recipients, dialogue-act registration,
+length, content policy, and topic grounding. Accepted speech produces separate
+observations for characters who could hear it.
+
+`claimedFactRefs` identify what the speaker purports to assert. They do not
+certify truth. Free text must never be parsed as an authoritative state patch.
+
+## 13. Ensemble scheduler
+
+Phase 3.2 introduces bounded multi-character orchestration without unrestricted
+parallel model calls.
+
+The scheduler must:
+
+- activate only characters affected by a material event, present in the active
+  scene, or due for bounded reflection;
+- distinguish foreground, background, and dormant cognitive tiers;
+- cap active reasoners per scene and model calls per simulation interval;
+- serialize conflicting actions against explicit state versions;
+- cancel or discard stale proposals when the world changes;
+- prevent one character from monopolizing a conversation;
+- allow urgent interruptions through deterministic policy; and
+- advance off-screen routine behavior without prose or expensive reasoning.
+
+Identical accepted inputs and recorded reasoner outputs must produce identical
+ensemble ordering during replay.
+
+## 14. Scene model
+
+A scene is a presentation and scheduling boundary, not a separate reality. It
+references canonical story state and includes:
+
+- scene ID and simulation-time interval;
+- location or linked locations;
+- present and viewpoint characters;
+- initiating event;
+- unresolved tensions or active commitments;
+- call, turn, and duration budgets; and
+- accepted events eligible for narration.
+
+The scene scheduler may open, continue, suspend, resume, or close a scene using
+deterministic policy. A model may recommend emphasis but may not fabricate a
+scene outcome.
+
+## 15. Narrative Director
+
+The Narrative Director decides what the reader sees, not what becomes true.
+
+It may:
+
+- select a viewpoint allowed by reader mode;
+- choose accepted events for foreground narration;
+- group causally adjacent events into a narrative beat;
+- request a scene transition;
+- summarize uneventful elapsed time;
+- suppress redundant presentation; and
+- identify unresolved tensions for inspection.
+
+It may not:
+
+- change world or Cortex state;
+- make a character choose an action;
+- mark a goal, plan, action, or obligation successful;
+- expose facts unavailable to the selected viewpoint;
+- reorder events across a causal dependency; or
+- introduce an unregistered event.
+
+Director output is strict, bounded, versioned, auditable, and optional. A
+deterministic fallback can render the accepted event stream without a model.
+
+## 16. Narrative renderer
+
+The renderer receives a bounded narrative beat containing source event IDs,
+viewpoint permissions, character presentation profiles, and accepted speech.
+It returns prose plus explicit source references.
+
+The renderer may add non-canonical connective language, sensory style already
+supported by visible facts, and dialogue attribution. It must quote or preserve
+accepted utterances according to policy and must not add consequential actions
+or facts.
+
+If prose validation fails, the system renders a deterministic event summary.
+The canonical transcript always retains source event links so a reader can
+distinguish simulation history from presentation.
+
+## 17. Designer authoring contract
+
+The MVP authoring format should provide versioned files for:
+
+- scenario metadata and opening conditions;
+- character identities and presentation descriptions;
+- motivations, traits, relationships, and initial beliefs;
+- private and public knowledge;
+- locations, passages, objects, and access rules;
+- domain and pack configuration;
+- allowed director interventions;
+- pacing, cognition, and content budgets; and
+- evaluation fixtures and expected invariants.
+
+The toolchain must validate references, namespaces, schema versions, duplicate
+ownership, impossible locations, inaccessible required objects, missing skills,
+invalid secrets, and incompatible packs before a run starts.
+
+Author files provide conditions and behavioral envelopes. They do not contain a
+hidden required plot or leak evaluation answers into character frames.
+
+## 18. Reader modes
+
+The reference application supports:
+
+- **observer:** read the selected narrative without controlling a character;
+- **viewpoint:** follow one character and see only permitted information;
+- **director:** introduce one of the scenario's registered external events;
+- **character:** optionally control one character while Cortex runs the rest;
+  and
+- **inspection:** pause prose and inspect structured state and causal records.
+
+Director input is treated as an external event proposal. It is validated,
+recorded, and projected separately to each observer. A natural-language reader
+message cannot directly mutate canonical state.
+
+## 19. Time, pacing, and cost
+
+Simulation time is authoritative and independent of wall-clock latency. The
+reader may pause, resume, or select supported speed tiers.
+
+The host enforces budgets for:
+
+- active scenes;
+- foreground characters;
+- dialogue turns;
+- goal and planning reconsiderations;
+- provider calls and tokens;
+- narrative beats;
+- retries and timeouts; and
+- elapsed simulation time without meaningful change.
+
+Routine movement, waiting, known greetings, and other low-significance actions
+should use deterministic policies where appropriate. Model reasoning is
+reserved for choices whose context or consequences justify it.
+
+Budget exhaustion produces an observable deterministic disposition such as
+waiting, summarizing, deferring, or closing the scene. It never grants the
+narrator or a character additional authority.
+
+## 20. Persistence, replay, and branching
+
+The MVP may remain local and file-backed, but it records:
+
+- scenario and pack fingerprints;
+- ordered world events and state versions;
+- observer projections;
+- accepted goals, plans, decisions, actions, outcomes, and utterances;
+- scene and Director records;
+- narrative beats and source event IDs;
+- provider metadata and usage; and
+- final state hashes.
+
+Replay performs zero model calls and reproduces canonical state, accepted
+character trajectories, scene ordering, narrative-source selections, and final
+hashes. Exact prose reproduction requires recorded renderer output; canonical
+replay does not depend on regenerating prose.
+
+Branching creates a new run with an explicit parent checkpoint and new external
+event. It never edits the parent history in place.
+
+## 21. Inspector
+
+The inspector presents a causal timeline:
+
+```text
+world event
+  -> observer projection
+  -> memory or belief update
+  -> goal opportunity
+  -> accepted goal
+  -> accepted plan
+  -> immediate decision
+  -> action or utterance
+  -> authoritative outcome
+  -> narrative beat
+```
+
+It shows structured factors such as motivations, relevant memory summaries,
+active relationships, obligations, policy constraints, alternatives offered,
+provider usage, and validation outcomes. It does not store or display hidden
+chain-of-thought.
+
+## 22. Security and trust boundaries
+
+Character biographies, memories, utterances, object text, scenario prose,
+reader input, and generated narration are untrusted data.
+
+Tests must demonstrate that embedded instructions cannot:
+
+- register an action, goal, fact, entity, or pack;
+- expose a private fact to an unauthorized observer;
+- bypass action validation or conversation membership;
+- mutate world or Cortex state;
+- alter scheduling, budget, content, or safety policy;
+- cause a replay to call a model; or
+- convert narrative prose into canonical history.
+
+## 23. Reference scenario
+
+The initial proof should use one contained setting with:
+
+- four characters;
+- five connected locations;
+- at least two private secrets and one false belief;
+- one scarce or contested object;
+- conflicting but non-scripted motivations;
+- at least one promise or obligation;
+- at least one lie or misleading utterance;
+- at least one interrupted or rejected action;
+- at least one off-screen event with selective observation; and
+- multiple defensible story trajectories.
+
+An isolated manor, stranded spacecraft, diplomatic residence, lifeboat, or
+frontier outpost is suitable. The setting is chosen in the living-story
+repository and must not appear in Cortex production source.
+
+## 24. Delivery slices
+
+### Slice A — Story host and authoring contracts
+
+- create the separate living-story repository;
+- define scenario, character, location, object, knowledge, and policy schemas;
+- implement authoring validation and deterministic story state; and
+- add an offline reference scenario fixture.
+
+### Slice B — Actions, dialogue, and observer projections
+
+- register the bounded story-domain vocabulary;
+- implement deterministic action and speech resolvers;
+- generate observer-specific perceptions; and
+- prove secrets, lies, presence, audibility, and possession remain grounded.
+
+### Slice C — Ensemble and scene orchestration
+
+- implement cognitive tiers and event-driven activation;
+- add bounded conversation turns and interruptions;
+- serialize conflicting actions and stale proposals; and
+- record deterministic scene lifecycle events.
+
+### Slice D — Narrative Director, renderer, and reader
+
+- implement provider-neutral Director and renderer contracts;
+- add deterministic fallbacks;
+- build a local live reader with pause, speed, viewpoint, and inspection modes;
+  and
+- link every narrative beat to accepted source events.
+
+### Slice E — Replay, evaluation, and product proof
+
+- replay a complete story with zero model calls;
+- add controlled ensemble, continuity, secret-leakage, pacing, diversity, and
+  cost evaluations;
+- run a bounded live reference scenario;
+- freeze the first accepted Phase 3.2 baseline; and
+- document all public-contract gaps discovered by the clean-room integration.
+
+## 25. Required test matrix
+
+The automated suite includes:
+
+- invalid author references, namespaces, schemas, and pack dependencies;
+- impossible movement, access, possession, and conversation actions;
+- selective visibility and audibility;
+- lies that update belief without mutating truth;
+- private information that never appears in unauthorized frames or narration;
+- simultaneous conflicting actions and stale-result rejection;
+- dialogue interruption, turn limits, and monopolization prevention;
+- dormant and off-screen cognitive tiers;
+- scene call, token, turn, and duration exhaustion;
+- narrator attempts to add actions, facts, or outcomes;
+- reader prompt-injection and unauthorized director events;
+- deterministic rendering fallback;
+- exact canonical replay with zero model calls;
+- branch lineage and immutable parent history;
+- multi-character goal, plan, action, and outcome trajectories;
+- controlled scenario variants with multiple defensible developments; and
+- production-source scans for reference-story identifiers in Cortex core.
+
+Live provider evaluations never run in the default unit suite.
+
+## 26. Acceptance criteria
+
+Phase 3.2 is complete only when:
+
+1. A new story scenario can be authored and run without editing Cortex core.
+2. Canonical state changes occur only through trusted reducers and action
+   outcomes.
+3. Characters act only through registered, revalidated capabilities.
+4. At least four agents sustain a bounded multi-scene trajectory with selective
+   knowledge and no omniscient frame leakage.
+5. At least one character lies or is mistaken without changing canonical truth.
+6. At least one promise or obligation constrains a later decision.
+7. Concurrent or interrupted actions produce deterministic, observable results.
+8. The Narrative Director and renderer cannot mutate state or invent a
+   consequential accepted event.
+9. Every rendered narrative beat links to accepted source events and a permitted
+   viewpoint.
+10. Pause, resume, speed, viewpoint, director, and inspection controls preserve
+    authority and replay semantics.
+11. Provider failure, timeout, invalid output, and budget exhaustion have
+    deterministic fallbacks.
+12. Injection attempts do not leak secrets, change policies, register
+    vocabulary, or create canonical facts.
+13. A complete accepted story replays with identical canonical events,
+    character trajectories, scene order, and final state hash using zero model
+    calls.
+14. Behavioral evaluation reports continuity, causal grounding, secret
+    containment, ensemble participation, diversity, repetition, safety,
+    latency, tokens, and cost.
+15. The first live Phase 3.2 quality baseline is reviewed and frozen without
+    treating every non-preferred but defensible story development as failure.
+
+## 27. Stop conditions
+
+Phase 3.2 stops when the acceptance criteria pass and the initial living-story
+baseline is frozen.
+
+The phase does not continue merely because:
+
+- a narrator could produce prettier prose;
+- a designer prefers a different ending;
+- every character does not receive equal page time;
+- a defensible character choice complicates the story;
+- a larger cast or setting would be more impressive; or
+- visual, voice, hosted, or marketplace features remain desirable.
+
+Work continues only for a demonstrated authority breach, secret leak,
+continuity defect, unbounded loop, invalid action, replay mismatch, unsafe
+output, material ensemble collapse, unusable authoring contract, or failure of
+the clean-room product boundary.
+
+## 28. Exit artifacts
+
+Phase 3.2 produces:
+
+- a separate living-story reference application repository;
+- versioned story scenario and authoring schemas;
+- a bounded story-domain pack;
+- authoritative action, speech, and observer-projection adapters;
+- ensemble and scene schedulers;
+- provider-neutral Narrative Director and renderer interfaces;
+- deterministic Director and rendering fallbacks;
+- a local live reader and structured causal inspector;
+- canonical story replay and immutable branch lineage;
+- ensemble behavioral evaluation tooling;
+- one accepted four-character reference story and frozen baseline; and
+- a report of public SDK improvements required by external product integration.
+
+Completing Phase 3.2 proves that Cortex can support a coherent text-first living
+world and a credible designer workflow. It does not yet prove production-scale
+persistence, large populations, institutional simulation, or a finished hosted
+product.

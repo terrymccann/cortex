@@ -152,21 +152,21 @@ two materially different reference worlds:
 The second world may add a domain, pack, world adapter, skills, and policies. It
 must not require a change to the kernel.
 
-## Parked roadmap: emergent autonomy layer
+## Autonomy and living-story roadmap
 
-This work is intentionally deferred until the Phase 2 model boundary and
-obligation invariants are stable. It should be resumed before declaring Cortex
-a general-purpose game-AI product.
+This work was deferred until the Phase 2 model boundary and obligation
+invariants were stable. Phase 3.0 and Phase 3.1 have now completed that
+foundation and frozen the first bounded-autonomy baseline.
 
-Before implementing that layer, Cortex completes
+The prerequisite contract work is specified in
 [Phase 3.0: Core Generalization and Extension Contracts](phase-3.0-core-generalization.md).
-That prerequisite removes closed genre assumptions, strengthens pack ownership,
+It removes closed genre assumptions, strengthens pack ownership,
 and proves the extension surface across three reference domains.
 
 The emergent layer itself is specified in
 [Phase 3.1: Bounded Emergent Autonomy](phase-3.1-bounded-emergent-autonomy.md).
 
-The layer should add:
+The implemented layer adds:
 
 - model-proposed goals that a deterministic Goal Manager validates before
   activation;
@@ -183,6 +183,13 @@ measure behavioral diversity, coherence across time, sensitivity to agent
 history, and resistance to repetitive or dominant-choice collapse. Success is
 not unconstrained action invention. Success is differentiated, emergent agency
 inside an authoritative simulation.
+
+With the Phase 3.1 baseline frozen, the next product-boundary proof is
+[Phase 3.2: Living Story Runtime](phase-3.2-living-story-runtime.md). It applies
+the public Cortex contracts in a separate text-first product where several
+characters act inside an authoritative story world and accepted events are
+rendered as live prose. The story host and Narrative Director remain consumers
+of Cortex rather than new kernel responsibilities.
 
 ## Delivery sequence
 
