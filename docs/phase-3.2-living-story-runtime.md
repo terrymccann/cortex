@@ -1,6 +1,6 @@
 # Phase 3.2: Living Story Runtime
 
-Status: implementation in progress; Slices A through C complete
+Status: implementation in progress; Slices A through D complete
 Scope: authoritative textual worlds, bounded ensemble orchestration, dialogue,
 narrative rendering, designer authoring, inspection, evaluation, and replay  
 Depends on:
@@ -812,7 +812,7 @@ repository and must not appear in Cortex production source.
 - produce deterministic safe-transition candidates and fallback scores; and
 - record deterministic scene and thread lifecycle events.
 
-### Slice D — Narrative Director, renderer, and reader
+### Slice D — Narrative Director, renderer, and reader (complete)
 
 - implement provider-neutral Director and renderer contracts;
 - implement prose-first rendering and designer-permitted style selection;
