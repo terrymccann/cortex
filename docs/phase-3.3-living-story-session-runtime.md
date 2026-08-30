@@ -1,6 +1,6 @@
 # Phase 3.3: Living Story Session Runtime
 
-Status: in progress; Slices A through C complete, Slice D next
+Status: complete; Slices A through D accepted
 Scope: sustained autonomous story sessions, lifecycle control, soak evaluation,
 reader/operator workbench, and basic scenario authoring  
 Depends on:
@@ -540,6 +540,15 @@ for the bounded MVP authoring surface.
 Slice D is complete when a second scenario can be authored, validated, launched,
 inspected, checkpointed, and replayed without product-source or Cortex-core
 changes.
+
+Accepted 2026-08-29. The Living Story product now owns a versioned portable
+project schema, v0-to-v1 migration, fingerprinted import/export, precise
+source-path diagnostics, compiled previews, and headless/Workbench launch. The
+second project, The Glass Orchard, uses only public authoring and Cortex
+contracts. It validates, launches, advances, checkpoints, exposes inspection
+state, and exactly replays with zero model calls. The 73-test product suite and
+desktop browser acceptance passed with no console errors; Cortex core required
+no scenario-specific source change.
 
 ## 25. Required verification
 
