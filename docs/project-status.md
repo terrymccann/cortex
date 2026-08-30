@@ -9,9 +9,9 @@ delivery progress rather than token, API, or model usage.
 
 **Current milestone:** Phase 3.3 — Living Story Session Runtime
 
-**Status:** Complete; all four slices accepted
+**Status:** Stabilization required; Slices A through D delivered, final acceptance reopened
 
-**Next step:** Review the Phase 3.3 product boundary and define the next bounded milestone from observed authoring and session-runtime limits
+**Next step:** Begin Stabilization E1 — recurrent, outcome-aware cognition and plan lifecycle
 
 ## Milestones
 
@@ -23,7 +23,7 @@ delivery progress rather than token, API, or model usage.
 | Phase 3.0 — Core Generalization | Complete | Scenario-agnostic public contracts, composable state and frames, standard packs, and cross-domain conformance |
 | Phase 3.1 — Bounded Emergent Autonomy | Complete | Goal formation, capability planning, outcome-driven coordination, replay, inspection, and accepted behavioral baseline |
 | Phase 3.2 — Living Story Runtime | Complete | Text-first ensemble simulation, Cortex character trajectories, story threads, grounded prose, reader modes, exact replay, behavioral evaluation, and an accepted live baseline |
-| Phase 3.3 — Living Story Session Runtime | Complete | Headless runtime, authenticated soak/replay baseline, local Story Workbench, portable authoring workflow, and a second scenario accepted |
+| Phase 3.3 — Living Story Session Runtime | In progress | Slices A–D delivered; sustained narrative coherence stabilization is required before final acceptance |
 
 ## Phase 3.2 delivery slices
 
@@ -43,6 +43,7 @@ delivery progress rather than token, API, or model usage.
 | B | Complete | Replay, checkpoint equivalence, branching, diagnostics, recorded/live cohorts, usage, injection canary, soak evaluation, and accepted authenticated baseline |
 | C | Complete | Local Story Workbench for prose, lifecycle controls, threads, inspection, usage, fallbacks, checkpoints, branching, and replay |
 | D | Complete | Versioned schema-backed authoring, validation, preview, migration, import/export, launch, and a second portable scenario with no Cortex or runtime-source changes |
+| E | In progress | Recurrent cognition, semantic repetition control, global narrative consumption, scene continuity, and reacceptance evaluation |
 
 ## Status convention
 
@@ -57,3 +58,5 @@ The completed Phase 3.2 boundary remains authoritative in
 approved Phase 3.3 scope, delivery order, acceptance criteria, and stop
 conditions are authoritative in
 [phase-3.3-living-story-session-runtime.md](phase-3.3-living-story-session-runtime.md).
+The reopened acceptance gates and stabilization delivery order are defined in
+[phase-3.3-stabilization.md](phase-3.3-stabilization.md).
