@@ -1,4 +1,8 @@
-import type { EntityRef } from "@cortex/contracts";
+import {
+  CORTEX_OBJECTIVE_MAX_LENGTH,
+  CORTEX_REASON_CODE_MAX_LENGTH,
+  type EntityRef
+} from "@cortex/contracts";
 import {
   ControllerOutputValidator,
   ControllerReasonerError,
@@ -8,6 +12,7 @@ import {
 } from "@cortex/runtime";
 
 export const OPENAI_CONTROLLER_PROMPT_VERSION = "cortex-controller-v3";
+export const OPENAI_CONTROLLER_RESPONSE_SCHEMA_VERSION = "cortex-controller-output-v1";
 
 export type OpenAIReasoningEffort = "none" | "low" | "medium" | "high" | "xhigh" | "max";
 
@@ -248,9 +253,9 @@ const createControllerOutputSchema = (frame: CognitiveFrame): Readonly<Record<st
         type: "string",
         enum: frame.feasibleIntentions.map((intention) => intention.id)
       },
-      objective: { type: "string", minLength: 1, maxLength: 400 },
+      objective: { type: "string", minLength: 1, maxLength: CORTEX_OBJECTIVE_MAX_LENGTH },
       commitment: { type: "number", minimum: 0, maximum: 1 },
-      reasonCode: { type: "string", minLength: 1, maxLength: 100 },
+      reasonCode: { type: "string", minLength: 1, maxLength: CORTEX_REASON_CODE_MAX_LENGTH },
       target: {
         anyOf: [
           { type: "null" },

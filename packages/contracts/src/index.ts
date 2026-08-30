@@ -2,6 +2,8 @@ export const CORTEX_CONTRACTS_SCHEMA_V1 = "cortex-contracts-v1" as const;
 export const CORTEX_CONTRACTS_TARGET_SCHEMA_V2 = "cortex-contracts-v2" as const;
 export const CORTEX_CONTRACTS_CURRENT_SCHEMA = CORTEX_CONTRACTS_SCHEMA_V1;
 
+export * from "./product.js";
+
 export type CortexContractsSchemaVersion =
   | typeof CORTEX_CONTRACTS_SCHEMA_V1
   | typeof CORTEX_CONTRACTS_TARGET_SCHEMA_V2;

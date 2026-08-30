@@ -1,4 +1,10 @@
-import type { AgentId, NamespacedId, SimTime } from "@cortex/contracts";
+import {
+  CORTEX_PROVIDER_IDENTIFIER_MAX_LENGTH,
+  CORTEX_REASON_CODE_MAX_LENGTH,
+  type AgentId,
+  type NamespacedId,
+  type SimTime
+} from "@cortex/contracts";
 import { ownedPatchKinds, type PatchEnvelope } from "./patches.js";
 import type { AgentState } from "./state.js";
 
@@ -20,6 +26,7 @@ export type PatchApplyResult =
 
 export interface AgentStateStore {
   register(state: AgentState): Promise<void>;
+  restore(state: AgentState): Promise<void>;
   snapshot(agentId: AgentId): Promise<Readonly<AgentState>>;
   apply(patch: PatchEnvelope): Promise<PatchApplyResult>;
 }
@@ -82,6 +89,16 @@ export class InMemoryAgentStateStore implements AgentStateStore {
 
   async register(state: AgentState): Promise<void> {
     if (this.#states.has(state.id)) throw new Error(`Agent already registered: ${state.id}`);
+    this.validateState(state);
+    this.#states.set(state.id, clone(state));
+  }
+
+  async restore(state: AgentState): Promise<void> {
+    this.validateState(state);
+    this.#states.set(state.id, clone(state));
+  }
+
+  private validateState(state: AgentState): void {
     for (const [sliceId, slice] of Object.entries(state.slices)) {
       const reducer = this.#sliceReducers.get(sliceId);
       if (!reducer) throw new Error(`Unknown initial state slice: ${sliceId}`);
@@ -92,7 +109,6 @@ export class InMemoryAgentStateStore implements AgentStateStore {
         throw new Error(`Invalid initial state slice: ${sliceId}`);
       }
     }
-    this.#states.set(state.id, clone(state));
   }
 
   async snapshot(agentId: AgentId): Promise<Readonly<AgentState>> {
@@ -152,11 +168,13 @@ export class InMemoryAgentStateStore implements AgentStateStore {
         envelope.patch.activeObligations?.some(
           (obligation) =>
             obligation.id.trim().length === 0 ||
+            obligation.id.length > CORTEX_PROVIDER_IDENTIFIER_MAX_LENGTH ||
             obligation.requiredIntentionIds.length === 0 ||
-            obligation.requiredIntentionIds.some((id) => id.trim().length === 0) ||
+            obligation.requiredIntentionIds.some((id) => id.trim().length === 0 || id.length > CORTEX_PROVIDER_IDENTIFIER_MAX_LENGTH) ||
             !Number.isInteger(obligation.remainingDecisionCycles) ||
             obligation.remainingDecisionCycles < 1 ||
-            obligation.reason.trim().length === 0
+            obligation.reason.trim().length === 0 ||
+            obligation.reason.length > CORTEX_REASON_CODE_MAX_LENGTH
         )
       ) {
         return { status: "rejected", reason: "invalid-value" };

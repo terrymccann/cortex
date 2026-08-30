@@ -169,9 +169,10 @@ export class DomainValidationError extends Error {
 }
 
 const namespacedIdPattern = /^[a-z][a-z0-9-]*:[a-z][a-z0-9-]*$/;
+export const CORTEX_DOMAIN_PUBLIC_ID_MAX_LENGTH = 100 as const;
 
 export const isNamespacedId = (value: string): value is NamespacedId =>
-  namespacedIdPattern.test(value);
+  value.length <= CORTEX_DOMAIN_PUBLIC_ID_MAX_LENGTH && namespacedIdPattern.test(value);
 
 export class DomainRegistry {
   readonly #domains = new Map<NamespacedId, GameDomain>();

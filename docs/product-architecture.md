@@ -14,6 +14,25 @@ cancellation, grounding, budgets, replay, and observability.
 Cortex answers **why an agent acts**. The game engine remains responsible for
 **how the action is physically performed**.
 
+The approved commercial packaging is now the **Cortex Autonomous World
+Platform**:
+
+- **Cortex Runtime** embeds bounded world agency in a host game or simulation;
+- **Cortex Studio** authors, simulates, inspects, evaluates, and compares those
+  worlds before and during integration; and
+- external flagship worlds demonstrate value without becoming Core schemas.
+
+The authoritative Phase 4.0 product specification is
+[phase-4.0-autonomous-world-platform.md](phase-4.0-autonomous-world-platform.md).
+
+Phase 4.0 Slices A–B now implement the portable product contracts and the
+generic sustained execution boundary. `CortexRuntime` creates or opens
+repository-backed `HeadlessWorldSession` instances; the session consumes only
+observer projections and host revision notices, schedules bounded cognition,
+and emits action proposals. Host dispositions and evidence-backed outcomes
+return over the same boundary. Checkpoint, branch, inspection, and replay are
+views of that recorded lifecycle, never alternate authority paths.
+
 The initial social-simulation scenario is a reference domain, not the universal
 data model.
 
@@ -208,6 +227,8 @@ kernel concerns.
 5. Hosted cognition workers and control plane only after SDK integration is
    proven.
 
-The initial business remains the reference game. The architecture preserves the
-option for Cortex to become a standalone SDK or hosted product without forcing
-that business decision prematurely.
+The initial product wedge is a local-first Studio and headless Runtime for
+autonomous-world developers. The first flagship society is a validation world,
+not the business itself. Hosted services, marketplace features, and broad game
+engine integrations remain conditional on a successful Phase 4.0 baseline and
+external pilots.

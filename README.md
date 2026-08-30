@@ -64,6 +64,27 @@ authoring. Its authoritative scope is
 Current delivery progress and the next implementation slice are tracked in
 [docs/project-status.md](docs/project-status.md).
 
+The approved productization milestone—Cortex Runtime plus Cortex Studio and an
+external flagship autonomous society—is specified in
+[docs/phase-4.0-autonomous-world-platform.md](docs/phase-4.0-autonomous-world-platform.md).
+Phase 4.0 Slice A is complete. It adds fingerprinted product identities,
+versioned World Project, World Session, proposal, outcome, World Run Bundle,
+and Baseline Manifest contracts; repository-backed in-memory composition; and
+a proposal-first host boundary that preserves the direct world adapter. See the
+[Slice A handoff](docs/phase-4.0-slice-a-handoff.md) and the
+[complete host integration example](docs/host-integration-example.md).
+Phase 4.0 Slice B is also complete. `HeadlessWorldSession` adds sustained
+event-driven multi-agent execution, lifecycle and budget control, observer-safe
+batch ingestion, concurrent activation, proposal/outcome orchestration,
+checkpoint restore and branching, inspection, usage accounting, and exact
+zero-model replay. See the [Slice B handoff](docs/phase-4.0-slice-b-handoff.md).
+Phase 4.0 Slice C is complete in the external
+`cortex-society-sim` repository: an eight-actor deterministic society, six
+demonstration scenarios, scripted and Cortex controls, inspection/run reports,
+and a 36-run offline cohort. The project owner reviewed and accepted the
+adaptation-and-recovery advantage; see the
+[Slice C handoff](docs/phase-4.0-slice-c-handoff.md).
+
 The first implementation milestone is a deterministic, in-memory vertical slice.
 PostgreSQL, pgvector, Redis, BullMQ, a visual client, and a narrative Director are
 later adapters or consumers—not prerequisites for proving Cortex's core loop.

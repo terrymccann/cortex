@@ -1,4 +1,11 @@
-import type { AgentId, EntityRef, EventId, GoalId, NamespacedId } from "@cortex/contracts";
+import {
+  CORTEX_REASON_CODE_MAX_LENGTH,
+  type AgentId,
+  type EntityRef,
+  type EventId,
+  type GoalId,
+  type NamespacedId
+} from "@cortex/contracts";
 import type { CapabilityDefinition, GoalDefinition, StrategyTemplateDefinition } from "@cortex/domain";
 import { ControllerReasonerError } from "@cortex/runtime";
 import type {
@@ -14,6 +21,8 @@ import type {
 
 export const OPENAI_GOAL_PROMPT_VERSION = "cortex-goal-reasoner-v4";
 export const OPENAI_PLANNER_PROMPT_VERSION = "cortex-planner-reasoner-v5";
+export const OPENAI_GOAL_RESPONSE_SCHEMA_VERSION = "cortex-goal-proposal-v1";
+export const OPENAI_PLANNER_RESPONSE_SCHEMA_VERSION = "cortex-plan-proposal-v1";
 
 export interface OpenAIGoalFormationFrame {
   readonly schemaVersion: "cortex-goal-formation-frame-v1";
@@ -283,7 +292,7 @@ const goalSchema = (frame: OpenAIGoalFormationFrame): Readonly<Record<string, un
     },
     proposedPriority: { type: "number", minimum: frame.limits.minimumPriority, maximum: frame.limits.maximumPriority },
     proposedHorizon: { type: "string", enum: frame.limits.allowedHorizons },
-    reasonCode: { type: "string", maxLength: 100, pattern: "^[a-z][a-z0-9-]*:[a-z][a-z0-9-]*$" }
+    reasonCode: { type: "string", maxLength: CORTEX_REASON_CODE_MAX_LENGTH, pattern: "^[a-z][a-z0-9-]*:[a-z][a-z0-9-]*$" }
   },
   required: ["definitionId", "definitionVersion", "parameters", "motivationIds", "evidenceRefs", "proposedPriority", "proposedHorizon", "reasonCode"]
 });
@@ -329,7 +338,7 @@ const planSchema = (frame: OpenAIPlanningFrame): Readonly<Record<string, unknown
     acknowledgedObligationIds: frame.activeObligationIds.length === 0
       ? { type: "array", maxItems: 0, items: { type: "string" } }
       : { type: "array", items: { type: "string", enum: frame.activeObligationIds } },
-    reasonCode: { type: "string", maxLength: 100, pattern: "^[a-z][a-z0-9-]*:[a-z][a-z0-9-]*$" }
+    reasonCode: { type: "string", maxLength: CORTEX_REASON_CODE_MAX_LENGTH, pattern: "^[a-z][a-z0-9-]*:[a-z][a-z0-9-]*$" }
   },
   required: ["goalId", "strategyId", "steps", "successConditionRefs", "failureConditionRefs", "acknowledgedObligationIds", "reasonCode"]
 });
@@ -397,7 +406,7 @@ const collectEntityRefs = (value: unknown): readonly EntityRef[] => {
 };
 
 const isReasonCode = (value: unknown): value is NamespacedId =>
-  typeof value === "string" && value.length <= 100 && /^[a-z][a-z0-9-]*:[a-z][a-z0-9-]*$/.test(value);
+  typeof value === "string" && value.length <= CORTEX_REASON_CODE_MAX_LENGTH && /^[a-z][a-z0-9-]*:[a-z][a-z0-9-]*$/.test(value);
 
 const normalizeGoalProposal = (value: unknown, frame: OpenAIGoalFormationFrame): unknown => {
   if (!isRecord(value)) return value;

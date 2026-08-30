@@ -1,17 +1,17 @@
 # Cortex Project Status
 
-Last updated: 2026-08-29
+Last updated: 2026-08-30
 
 This document is the lightweight milestone tracker for Cortex. It records
 delivery progress rather than token, API, or model usage.
 
 ## Current position
 
-**Current milestone:** Phase 3.3 — Living Story Session Runtime
+**Current milestone:** Phase 4.0 — Cortex Autonomous World Platform
 
-**Status:** Complete; Slices A–D and Stabilization E1–E4 accepted
+**Status:** Slices A–C complete; Slice D ready to begin
 
-**Next step:** Define the next product milestone after the accepted Phase 3.3 living-story session runtime
+**Next step:** Slice D — Cortex Studio local product
 
 ## Milestones
 
@@ -24,6 +24,17 @@ delivery progress rather than token, API, or model usage.
 | Phase 3.1 — Bounded Emergent Autonomy | Complete | Goal formation, capability planning, outcome-driven coordination, replay, inspection, and accepted behavioral baseline |
 | Phase 3.2 — Living Story Runtime | Complete | Text-first ensemble simulation, Cortex character trajectories, story threads, grounded prose, reader modes, exact replay, behavioral evaluation, and an accepted live baseline |
 | Phase 3.3 — Living Story Session Runtime | Complete | Slices A–D and Stabilization E1–E4 accepted with an authenticated, human-reviewed, frozen baseline |
+| Phase 4.0 — Cortex Autonomous World Platform | In progress | Runtime contracts, generic sessions, and the reviewed flagship society are complete; Studio and product-baseline slices remain |
+
+## Phase 4.0 delivery slices
+
+| Slice | Status | Scope |
+| --- | --- | --- |
+| A | Complete | Product contracts, baseline integrity, generic artifacts, repository interfaces, proposal-first host boundary, and compatibility tests |
+| B | Complete | Generic sustained World Session, activation, proposals, outcomes, checkpoints, inspection, replay, and drone/colony conformance |
+| C | Complete | External eight-actor society, six scenarios, scripted comparison, replay/authority gates, offline cohort, and accepted human value review |
+| D | Next | Local Cortex Studio authoring, simulation, inspection, replay, branch, and comparison workflow |
+| E | Pending | Offline/live cohorts, state-machine comparison, cost and performance gates, human review, and accepted product baseline |
 
 ## Phase 3.2 delivery slices
 
@@ -63,3 +74,8 @@ conditions are authoritative in
 [phase-3.3-living-story-session-runtime.md](phase-3.3-living-story-session-runtime.md).
 The reopened acceptance gates and stabilization delivery order are defined in
 [phase-3.3-stabilization.md](phase-3.3-stabilization.md).
+
+The approved product boundary, current repository assessment, target
+architecture, delivery plan, acceptance gates, and Slice A checklist are
+defined in
+[phase-4.0-autonomous-world-platform.md](phase-4.0-autonomous-world-platform.md).

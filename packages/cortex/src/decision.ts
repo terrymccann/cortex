@@ -1,5 +1,8 @@
 import { createHash } from "node:crypto";
 import {
+  CORTEX_OBJECTIVE_MAX_LENGTH,
+  CORTEX_PROVIDER_IDENTIFIER_MAX_LENGTH,
+  CORTEX_REASON_CODE_MAX_LENGTH,
   asDecisionId,
   type AgentId,
   type CortexWorldPort,
@@ -237,16 +240,16 @@ export class ControllerOutputValidator {
     const reasonCode = value["reasonCode"];
     const target = value["target"];
 
-    if (typeof intentionId !== "string") return { valid: false, issue: "invalid-intention" };
+    if (typeof intentionId !== "string" || intentionId.length > CORTEX_PROVIDER_IDENTIFIER_MAX_LENGTH) return { valid: false, issue: "invalid-intention" };
     const intention = feasibleIntentions.find((candidate) => candidate.id === intentionId);
     if (!intention) return { valid: false, issue: "invalid-intention" };
-    if (typeof objective !== "string" || objective.trim().length === 0) {
+    if (typeof objective !== "string" || objective.trim().length === 0 || objective.length > CORTEX_OBJECTIVE_MAX_LENGTH) {
       return { valid: false, issue: "invalid-objective" };
     }
     if (typeof commitment !== "number" || !Number.isFinite(commitment) || commitment < 0 || commitment > 1) {
       return { valid: false, issue: "invalid-commitment" };
     }
-    if (typeof reasonCode !== "string" || reasonCode.trim().length === 0) {
+    if (typeof reasonCode !== "string" || reasonCode.trim().length === 0 || reasonCode.length > CORTEX_REASON_CODE_MAX_LENGTH) {
       return { valid: false, issue: "invalid-reason-code" };
     }
     if (target !== undefined && (!isEntityRef(target) || !intention.allowedTargets.some((candidate) => sameEntity(candidate, target)))) {

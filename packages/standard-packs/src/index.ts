@@ -540,3 +540,7 @@ function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
 const clamp01 = (value: number): number => Math.max(0, Math.min(1, value));
+export const CORTEX_STANDARD_PACKS_PACKAGE_IDENTITY = Object.freeze({
+  id: "@cortex/standard-packs",
+  version: "0.1.0"
+} as const);
