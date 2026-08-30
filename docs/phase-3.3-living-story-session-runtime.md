@@ -1,6 +1,6 @@
 # Phase 3.3: Living Story Session Runtime
 
-Status: stabilization required; Slices A through D delivered, final acceptance reopened
+Status: complete; Slices A through D and Stabilization E1 through E4 accepted
 Scope: sustained autonomous story sessions, lifecycle control, soak evaluation,
 reader/operator workbench, and basic scenario authoring  
 Depends on:
@@ -642,8 +642,8 @@ This specification is the authoritative Phase 3.3 scope. Slice documents may
 refine implementation details but may not broaden authority, weaken replay, or
 replace these acceptance criteria without an explicit phase amendment.
 
-The 2026-08-29 stabilization amendment reopens final acceptance after the
+The 2026-08-29 stabilization amendment reopened final acceptance after the
 second scenario exposed reuse of one-shot plans, unchanged action and dialogue
 repetition, and duplicate primary narration across threads. Slices A through D
-remain delivered; Phase 3.3 returns to complete only after the amendment gates
-pass.
+remain delivered. Stabilization E1 through E4 subsequently passed, and the
+authenticated, human-reviewed baseline is frozen; Phase 3.3 is complete.

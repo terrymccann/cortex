@@ -9,9 +9,9 @@ delivery progress rather than token, API, or model usage.
 
 **Current milestone:** Phase 3.3 — Living Story Session Runtime
 
-**Status:** Stabilization required; Slices A through D delivered, final acceptance reopened
+**Status:** Complete; Slices A–D and Stabilization E1–E4 accepted
 
-**Next step:** Run the Stabilization E4 authenticated three-trial cohort, complete the bound human comprehension review, and freeze the accepted baseline
+**Next step:** Define the next product milestone after the accepted Phase 3.3 living-story session runtime
 
 ## Milestones
 
@@ -23,7 +23,7 @@ delivery progress rather than token, API, or model usage.
 | Phase 3.0 — Core Generalization | Complete | Scenario-agnostic public contracts, composable state and frames, standard packs, and cross-domain conformance |
 | Phase 3.1 — Bounded Emergent Autonomy | Complete | Goal formation, capability planning, outcome-driven coordination, replay, inspection, and accepted behavioral baseline |
 | Phase 3.2 — Living Story Runtime | Complete | Text-first ensemble simulation, Cortex character trajectories, story threads, grounded prose, reader modes, exact replay, behavioral evaluation, and an accepted live baseline |
-| Phase 3.3 — Living Story Session Runtime | In progress | Slices A–D delivered; sustained narrative coherence stabilization is required before final acceptance |
+| Phase 3.3 — Living Story Session Runtime | Complete | Slices A–D and Stabilization E1–E4 accepted with an authenticated, human-reviewed, frozen baseline |
 
 ## Phase 3.2 delivery slices
 
@@ -46,7 +46,7 @@ delivery progress rather than token, API, or model usage.
 | E1 | Complete | Recurrent outcome-aware cognition, explicit plan-step lifecycle, causal plan revisions, action authorization, and replay validation |
 | E2 | Complete | Deterministic semantic signatures, material-state novelty, typed repetition rejection, world-change deferral, and meaningful-progress accounting |
 | E3 | Complete | Session-global primary publication authority, explicit consumption dispositions, continuing-scene context, coherent fallback compaction, and replay validation |
-| E4 | In progress | Evaluator and human-review workflow complete; deterministic gate accepted; authenticated cohort, human review, and explicit baseline freeze pending |
+| E4 | Complete | Deterministic and authenticated gates passed; human comprehension accepted; cohort-bound baseline frozen |
 
 ## Status convention
 

@@ -1,6 +1,6 @@
 # Phase 3.3 Stabilization Amendment: Sustained Narrative Coherence
 
-Status: active; E1-E3 accepted, E4 next
+Status: complete; E1-E4 accepted and authenticated baseline frozen
 Date: 2026-08-29  
 Amends: [Phase 3.3: Living Story Session Runtime](phase-3.3-living-story-session-runtime.md)
 
@@ -215,9 +215,9 @@ records and prose editions with zero model calls.
 
 ## 7. Stabilization Slice E4 — Evaluation and reacceptance
 
-Implementation status: evaluator and human-review workflow complete;
-deterministic gate accepted; authenticated cohort, human review, and explicit
-baseline freeze pending. The Living Story verification record is
+Implementation status: complete and accepted. Deterministic and authenticated
+gates passed, the human comprehension review was accepted, and the cohort-bound
+baseline was frozen. The Living Story verification record is
 [Phase 3.3 Stabilization E4](../../cortex-living-story/docs/phase-3.3-stabilization-e4.md).
 
 ### Deterministic evaluation
@@ -319,10 +319,7 @@ Stop and repair the architecture if:
 
 ## 11. Exit condition
 
-Phase 3.3 returns to complete only when E1 through E4 pass, the authenticated
-stabilization baseline is explicitly frozen, and the Workbench demonstrates a
+Phase 3.3 is complete. E1 through E4 passed, the authenticated stabilization
+baseline was explicitly reviewed and frozen, and the Workbench demonstrated a
 coherent second scenario without repeated unchanged actions, dialogue, or
 primary event narration.
-
-Until then, Slices A through D remain valid delivered infrastructure, but the
-Phase 3.3 product claim is **stabilization required**.
