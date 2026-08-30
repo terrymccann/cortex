@@ -1,6 +1,6 @@
 # Phase 3.3 Stabilization Amendment: Sustained Narrative Coherence
 
-Status: active; E1 accepted, E2 next
+Status: active; E1-E2 accepted, E3 next
 Date: 2026-08-29  
 Amends: [Phase 3.3: Living Story Session Runtime](phase-3.3-living-story-session-runtime.md)
 
@@ -116,6 +116,10 @@ proof with all authority and quality gates passing.
 
 ## 5. Stabilization Slice E2 — Semantic repetition and progress control
 
+**Status:** Complete and accepted on 2026-08-29. The Living Story integration
+record is
+[Phase 3.3 Stabilization E2](../../cortex-living-story/docs/phase-3.3-stabilization-e2.md).
+
 ### Deliverables
 
 - a deterministic action signature containing actor, capability, semantic
@@ -146,6 +150,28 @@ Accepted deterministic sessions must contain zero unchanged repeated action
 signatures, zero exact repeated utterance signatures, and zero waits counted as
 progress without a scheduled consequence. Repetition rejections must not cause
 an unbounded retry loop.
+
+### Acceptance record
+
+The Living Story runtime now computes deterministic semantic and material-state
+fingerprints before authoritative resolution. A bounded cooldown admits legal
+capability reuse after relevant state changes while rejecting unchanged action
+repetition, exact per-speaker utterance repetition, and unscheduled waits with
+typed dispositions. Rejections close the plan revision with causal evidence;
+actors without a legal meaningful proposal are deferred against the current
+world fingerprint and wake only after canon changes.
+
+Progress and character quotas now count canonical non-wait outcomes rather
+than cognition or filler. Replay archives validate semantic uniqueness and
+reject false-progress records. Session, checkpoint, replay, evaluation, and
+cohort contracts were versioned for the new audit fields.
+
+The 12-trial offline cohort completed 12 accepted actions in every trial with
+zero unchanged accepted actions, zero exact repeated utterances, zero accepted
+waits, zero false-progress turns, no deadlocks, and 100% authority,
+defensibility, and exact replay. Focused tests cover repeated travel,
+inspection, assistance, communication, waits, and legal reuse after a material
+state change.
 
 ## 6. Stabilization Slice E3 — Narrative consumption and scene continuity
 

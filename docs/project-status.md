@@ -11,7 +11,7 @@ delivery progress rather than token, API, or model usage.
 
 **Status:** Stabilization required; Slices A through D delivered, final acceptance reopened
 
-**Next step:** Begin Stabilization E2 — semantic repetition and meaningful-progress control
+**Next step:** Begin Stabilization E3 — global narrative consumption and scene continuity
 
 ## Milestones
 
@@ -44,8 +44,8 @@ delivery progress rather than token, API, or model usage.
 | C | Complete | Local Story Workbench for prose, lifecycle controls, threads, inspection, usage, fallbacks, checkpoints, branching, and replay |
 | D | Complete | Versioned schema-backed authoring, validation, preview, migration, import/export, launch, and a second portable scenario with no Cortex or runtime-source changes |
 | E1 | Complete | Recurrent outcome-aware cognition, explicit plan-step lifecycle, causal plan revisions, action authorization, and replay validation |
-| E2 | Next | Semantic repetition signatures, novelty policy, and meaningful-progress control |
-| E3 | Pending | Global narrative consumption and scene continuity |
+| E2 | Complete | Deterministic semantic signatures, material-state novelty, typed repetition rejection, world-change deferral, and meaningful-progress accounting |
+| E3 | Next | Global narrative consumption and scene continuity |
 | E4 | Pending | Stabilization evaluation, authenticated cohort, and reacceptance |
 
 ## Status convention
