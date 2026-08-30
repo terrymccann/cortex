@@ -11,7 +11,7 @@ delivery progress rather than token, API, or model usage.
 
 **Status:** Stabilization required; Slices A through D delivered, final acceptance reopened
 
-**Next step:** Begin Stabilization E3 — global narrative consumption and scene continuity
+**Next step:** Begin Stabilization E4 — evaluation and authenticated reacceptance
 
 ## Milestones
 
@@ -45,8 +45,8 @@ delivery progress rather than token, API, or model usage.
 | D | Complete | Versioned schema-backed authoring, validation, preview, migration, import/export, launch, and a second portable scenario with no Cortex or runtime-source changes |
 | E1 | Complete | Recurrent outcome-aware cognition, explicit plan-step lifecycle, causal plan revisions, action authorization, and replay validation |
 | E2 | Complete | Deterministic semantic signatures, material-state novelty, typed repetition rejection, world-change deferral, and meaningful-progress accounting |
-| E3 | Next | Global narrative consumption and scene continuity |
-| E4 | Pending | Stabilization evaluation, authenticated cohort, and reacceptance |
+| E3 | Complete | Session-global primary publication authority, explicit consumption dispositions, continuing-scene context, coherent fallback compaction, and replay validation |
+| E4 | Next | Extended stabilization metrics, authenticated cohort, human comprehension review, and explicit baseline freeze |
 
 ## Status convention
 

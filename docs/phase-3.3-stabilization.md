@@ -1,6 +1,6 @@
 # Phase 3.3 Stabilization Amendment: Sustained Narrative Coherence
 
-Status: active; E1-E2 accepted, E3 next
+Status: active; E1-E3 accepted, E4 next
 Date: 2026-08-29  
 Amends: [Phase 3.3: Living Story Session Runtime](phase-3.3-living-story-session-runtime.md)
 
@@ -174,6 +174,10 @@ inspection, assistance, communication, waits, and legal reuse after a material
 state change.
 
 ## 6. Stabilization Slice E3 — Narrative consumption and scene continuity
+
+Implementation status: complete and accepted offline. The Living Story
+verification record is
+[Phase 3.3 Stabilization E3](../../cortex-living-story/docs/phase-3.3-stabilization-e3.md).
 
 ### Deliverables
 
