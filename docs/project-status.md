@@ -11,7 +11,7 @@ delivery progress rather than token, API, or model usage.
 
 **Status:** Stabilization required; Slices A through D delivered, final acceptance reopened
 
-**Next step:** Begin Stabilization E4 — evaluation and authenticated reacceptance
+**Next step:** Run the Stabilization E4 authenticated three-trial cohort, complete the bound human comprehension review, and freeze the accepted baseline
 
 ## Milestones
 
@@ -46,7 +46,7 @@ delivery progress rather than token, API, or model usage.
 | E1 | Complete | Recurrent outcome-aware cognition, explicit plan-step lifecycle, causal plan revisions, action authorization, and replay validation |
 | E2 | Complete | Deterministic semantic signatures, material-state novelty, typed repetition rejection, world-change deferral, and meaningful-progress accounting |
 | E3 | Complete | Session-global primary publication authority, explicit consumption dispositions, continuing-scene context, coherent fallback compaction, and replay validation |
-| E4 | Next | Extended stabilization metrics, authenticated cohort, human comprehension review, and explicit baseline freeze |
+| E4 | In progress | Evaluator and human-review workflow complete; deterministic gate accepted; authenticated cohort, human review, and explicit baseline freeze pending |
 
 ## Status convention
 

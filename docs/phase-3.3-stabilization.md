@@ -215,6 +215,11 @@ records and prose editions with zero model calls.
 
 ## 7. Stabilization Slice E4 — Evaluation and reacceptance
 
+Implementation status: evaluator and human-review workflow complete;
+deterministic gate accepted; authenticated cohort, human review, and explicit
+baseline freeze pending. The Living Story verification record is
+[Phase 3.3 Stabilization E4](../../cortex-living-story/docs/phase-3.3-stabilization-e4.md).
+
 ### Deterministic evaluation
 
 The offline suite must report at minimum:
