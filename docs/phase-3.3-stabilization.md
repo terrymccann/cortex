@@ -1,6 +1,6 @@
 # Phase 3.3 Stabilization Amendment: Sustained Narrative Coherence
 
-Status: approved; implementation not started  
+Status: active; E1 accepted, E2 next
 Date: 2026-08-29  
 Amends: [Phase 3.3: Living Story Session Runtime](phase-3.3-living-story-session-runtime.md)
 
@@ -54,6 +54,10 @@ Stabilization must preserve all accepted Phase 3.0 through 3.3 boundaries:
 
 ## 4. Stabilization Slice E1 — Recurrent, outcome-aware cognition
 
+**Status:** Complete and accepted on 2026-08-29. The Living Story integration
+record is
+[Phase 3.3 Stabilization E1](../../cortex-living-story/docs/phase-3.3-stabilization-e1.md).
+
 ### Deliverables
 
 - explicit active goal, plan, current step, completed step, and superseded plan
@@ -86,6 +90,29 @@ In a deterministic twelve-or-more-action session, all four characters must
 advance through plan lifecycle state. At least one character must revise or
 replace a plan after an authoritative outcome. Every accepted action must point
 to the active plan step that authorized it.
+
+### Acceptance record
+
+The implementation now retains an immutable Cortex trajectory for every
+cognition cycle and a separate session-owned execution lifecycle for each plan
+revision. Step activation, completion, rejection, outcome evidence, and causal
+reformation triggers are explicit. A still-active step continues without a
+new provider call; a terminal outcome causes bounded cognition on the next
+eligible activation. Actions and replay archives carry both plan revision and
+step identity.
+
+The deterministic Glass Orchard gate completed 12 accepted actions across all
+four characters with 12 completed plan lifecycles and 24 bounded Cortex calls.
+Each character progressed through revisions 1, 2, and 3; revisions 2 and 3
+were linked to the preceding accepted outcome. A separate rejection test
+proved `initial -> rejected -> outcome-rejected revision -> completed`.
+Checkpoint and full-session replay validate plan authorization and make zero
+model calls.
+
+Verification: TypeScript typecheck; 17 test files and 74 tests; deterministic
+session completion; 12-trial offline cohort with 100% authority,
+defensibility, replay, and fallback health; and the unchanged Phase 3.2 offline
+proof with all authority and quality gates passing.
 
 ## 5. Stabilization Slice E2 — Semantic repetition and progress control
 
